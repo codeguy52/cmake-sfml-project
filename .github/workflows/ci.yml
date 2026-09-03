@@ -4,43 +4,29 @@ on: [push, pull_request]
 
 jobs:
   build:
-    name: ${{ matrix.platform.name }} ${{ matrix.config.name }}
-    runs-on: ${{ matrix.platform.os }}
-
-    strategy:
-      fail-fast: false
-      matrix:
-        platform:
-        - { name: Windows VS2019, os: windows-2019  }
-        - { name: Windows VS2022, os: windows-2022  }
-        - { name: Windows MinGW,  os: windows-2022, flags: -GNinja -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ }
-        - { name: Linux GCC,      os: ubuntu-latest }
-        - { name: Linux Clang,    os: ubuntu-latest, flags: -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ }
-        - { name: macOS,          os: macos-latest  }
-        config:
-        - { name: Shared, flags: -DBUILD_SHARED_LIBS=TRUE }
-        - { name: Static, flags: -DBUILD_SHARED_LIBS=FALSE }
+    name: Typecheck, test and build
+    runs-on: ubuntu-latest
 
     steps:
-    - name: Install Window Dependencies
-      if: runner.os == 'Windows'
-      run: choco install ninja
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Install Linux Dependencies
-      if: runner.os == 'Linux'
-      run: sudo apt-get update && sudo apt-get install libxrandr-dev libxcursor-dev libudev-dev libopenal-dev libflac-dev libvorbis-dev libgl1-mesa-dev libegl1-mesa-dev
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
 
-    - name: Checkout
-      uses: actions/checkout@v3
+      - name: Install dependencies
+        run: npm ci
 
-    - name: Configure
-      shell: bash
-      run: cmake -S . -B build -DCMAKE_INSTALL_PREFIX=install ${{matrix.platform.flags}} ${{matrix.config.flags}}
+      - name: Typecheck
+        run: npm run typecheck
 
-    - name: Build
-      shell: bash
-      run: cmake --build build --config Release
+      - name: Test
+        run: npm test
 
-    - name: Install
-      shell: bash
-      run: cmake --install build --config Release
+      # Also exercises scripts/vendor-ocr-assets.mjs via the prebuild hook, so a
+      # missing OCR asset fails here rather than in someone's browser.
+      - name: Build
+        run: npm run build

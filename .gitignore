@@ -1,6 +1,17 @@
-build
-out
-.cache
+# Dependencies
+node_modules
+
+# Build output
+dist
+*.tsbuildinfo
+
+# Vendored OCR runtime — reproduced from node_modules by
+# scripts/vendor-ocr-assets.mjs, so it is not committed.
+public/tesseract/
+
+# Editors and tooling
 .idea
 .vs
 .vscode
+.cache
+.DS_Store

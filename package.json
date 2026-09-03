@@ -1,0 +1,37 @@
+{
+  "name": "fire-budget",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Offline-first financial independence and budgeting app with receipt OCR",
+  "scripts": {
+    "vendor:ocr": "node scripts/vendor-ocr-assets.mjs",
+    "predev": "npm run vendor:ocr",
+    "dev": "vite",
+    "prebuild": "npm run vendor:ocr",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
+    "idb": "^8.0.3",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "recharts": "^2.15.4",
+    "tesseract.js": "^5.1.1",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.2",
+    "fake-indexeddb": "^6.0.1",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.5",
+    "vitest": "^3.2.4"
+  }
+}
