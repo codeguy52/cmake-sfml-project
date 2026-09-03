@@ -74,11 +74,35 @@ git-ignored — they're large and reproducible from the lockfile.
 The built output in `dist/` is plain static files and can be served from any
 static host, including a subdirectory (asset paths are relative).
 
+## Deploying it
+
+`.github/workflows/deploy.yml` publishes to GitHub Pages. Enable it once under
+**Settings → Pages → Source → GitHub Actions**; after that every push to
+`master` deploys, and the Actions tab has a "Run workflow" button to deploy from
+a branch before merging.
+
+The site lands at `https://<user>.github.io/<repo>/`. Asset paths are relative
+and the service worker scopes itself to wherever it's served from, so a
+subdirectory deploy works without configuration — as does any other static host
+(Netlify, Cloudflare Pages, S3) if you'd rather drag `dist/` somewhere.
+
 ## Installing it on a phone
 
-It's a PWA. Open the deployed URL, then "Add to Home Screen". A service worker
-caches the app shell and assets, so after the first visit it opens and works with
-no network — including receipt scanning.
+Open the deployed URL on the phone, then:
+
+- **iOS / Safari** — Share → Add to Home Screen
+- **Android / Chrome** — the install prompt, or ⋮ → Add to Home screen
+
+It then launches like an app, without browser chrome. A service worker caches
+the shell and assets, so after the first visit it opens with no network. Receipt
+scanning works offline too, once the first scan has pulled the language model
+into cache.
+
+**It has to be HTTPS.** Serving the dev server over your LAN
+(`npm run dev -- --host`, then `http://192.168.x.x:5173` on the phone) is fine
+for a quick look and the app itself works, but browsers refuse to register a
+service worker on a plain-HTTP origin, so there's no install and no offline
+mode. GitHub Pages is HTTPS, so it gets the full behaviour.
 
 ## Backups matter
 
