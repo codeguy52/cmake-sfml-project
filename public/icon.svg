@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Ember">
+  <rect width="512" height="512" rx="113" fill="#2a78d6" />
+  <circle cx="256" cy="256" r="170" fill="none" stroke="#fcfcfb" stroke-width="60" />
+  <circle cx="256" cy="256" r="60" fill="#fcfcfb" />
+</svg>

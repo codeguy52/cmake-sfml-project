@@ -1,103 +1,166 @@
-# CMake SFML Project Template
+# Ember — budgeting and financial independence
 
-This repository template should allow for a fast and hassle-free kick start of your next SFML project using CMake.
-Thanks to [GitHub's nature of templates](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template), you can fork this repository without inheriting its Git history.
+An offline-first web app for running a budget and tracking progress toward
+financial independence, with receipt scanning that reads the photo on your own
+device.
 
-The template starts out very basic, but might receive additional features over time:
+Everything you enter — budgets, transactions, receipt photos, account balances —
+is stored in your browser's IndexedDB on the device you entered it on. There is
+no account, no server and no sync. The app makes **no network requests at all**
+after it loads: even the OCR engine and its language model are served from the
+app's own origin.
 
-- Basic CMake script to build your project and link SFML on any operating system
-- Basic [GitHub Actions](https://github.com/features/actions) script for all major platforms
+## What it does
 
-## How to Use
+**Budget by percentage or by dollar amount, freely mixed.** Every category
+claims either a share of your monthly income or a flat amount, and the toggle
+between the two converts at your current income rather than resetting. Rent is
+naturally a fixed number; savings is naturally a percentage. Subcategories claim
+a share of *their parent's* resolved budget, so "80% of housing goes to rent"
+stays true when your income changes.
 
-1. Follow the above instructions about how to use GitHub's project template feature to create your own project.
-1. Open [CMakeLists.txt](CMakeLists.txt). Rename the project and the executable to whatever name you want. The project and executable names don't have to match.
-1. If you want to add or remove any .cpp files, change the source files listed in the [`add_executable`](CMakeLists.txt#L10) call in CMakeLists.txt to match the source files your project requires. If you plan on keeping the default main.cpp file then no changes are required.
-1. If you use Linux, install SFML's dependencies using your system package manager. On Ubuntu and other Debian-based distributions you can use the following commands:
-    ```
-    sudo apt update
-    sudo apt install \
-        libxrandr-dev \
-        libxcursor-dev \
-        libudev-dev \
-        libfreetype-dev \
-        libopenal-dev \
-        libflac-dev \
-        libvorbis-dev \
-        libgl1-mesa-dev \
-        libegl1-mesa-dev
-    ```
-1. Configure and build your project. Most popular IDEs support CMake projects with very little effort on your part.
-    - [VS Code](https://code.visualstudio.com) via the [CMake extension](https://code.visualstudio.com/docs/cpp/cmake-linux)
-    - [Visual Studio](https://docs.microsoft.com/en-us/cpp/build/cmake-projects-in-visual-studio?view=msvc-170)
-    - [CLion](https://www.jetbrains.com/clion/features/cmake-support.html)
-    - [Qt Creator](https://doc.qt.io/qtcreator/creator-project-cmake.html)
+Categories and subcategories can be added, renamed, recolored, reordered and
+removed at any time. Deleting a category **keeps** its transactions — they become
+uncategorized and can be reassigned, because losing spending history to a budget
+edit would be indefensible.
 
-    Using CMake from the command line is straightforward as well.
+**Receipt scanning on-device.** Photograph a receipt (the camera opens directly
+on a phone) and Tesseract reads it locally. The parser pulls out the merchant,
+the date and the total, and is deliberately suspicious: it scores total
+candidates rather than trusting the first match, refuses lines like `SUBTOTAL`,
+`TOTAL SAVINGS` and `CHANGE`, and tolerates OCR turning `TOTAL` into `T0TAL`.
+Every field arrives as an editable draft with warnings attached — nothing is
+committed until you press Save. Manual entry is always available as a first-class
+path, with or without a photo.
 
-    For a single-configuration generator (typically the case on Linux and macOS):
-    ```
-    cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-    cmake --build build
-    ```
+**Investments.** Accounts by tax treatment (401(k), IRA, Roth, HSA, taxable,
+etc.), holdings with cost basis and hand-entered prices, allocation by asset
+class and by account, drift from a target mix, blended expense ratio and what it
+costs you per year, plus other assets and debts rolled into net worth. Prices are
+manual by design — a live quote would mean a network call.
 
-    For a multi-configuration generator (typically the case on Windows):
-    ```
-    cmake -S . -B build
-    cmake --build build --config Release
-    ```
-1. Enjoy!
+**Financial independence.** Your FI number from the withdrawal rate you choose,
+progress toward it, what your portfolio already covers each month, Coast FI, a
+month-by-month projection separating contributions from compounding, savings
+rate, and how much the whole picture moves if the withdrawal rate is 3% instead
+of 4%.
 
-## Upgrading SFML
+Everything is expressed in **today's dollars**: rather than inflating the
+spending target each year, the expected return is discounted by inflation, so a
+7% nominal return with 3% inflation is treated as a ~3.88% real return and the FI
+number stays put. Every figure on screen is comparable to what things cost now.
 
-SFML is found via CMake's [FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html) module.
-FetchContent automatically downloads SFML from GitHub and builds it alongside your own code.
-Beyond the convenience of not having to install SFML yourself, this ensures ABI compatability and simplifies things like specifying static versus shared libraries.
+## Running it
 
-Modifying what version of SFML you want is as easy as changing the [`GIT_TAG`](CMakeLists.txt#L7) argument.
-Currently it uses the latest in-development version of SFML 2 via the `2.6.x` tag.
-If you're feeling adventurous and want to give SFML 3 a try, use the `master` tag.
-Beware, this requires changing your code to suit the modified API!
-The nice folks in the [SFML community](https://github.com/SFML/SFML#community) can help you with that transition and the bugs you may encounter along the way.
+```sh
+npm install
+npm run dev      # http://localhost:5173
+```
 
-## But I want to...
+Other scripts:
 
-Modify CMake options by adding them as configuration parameters (with a `-D` flag) or by modifying the contents of CMakeCache.txt and rebuilding.
+```sh
+npm run build      # production build into dist/
+npm run preview    # serve the production build
+npm test           # unit tests
+npm run typecheck  # tsc, no emit
+```
 
-### Use Static Libraries
+`npm run dev` and `npm run build` both run `scripts/vendor-ocr-assets.mjs`
+first, which copies the OCR worker, the WebAssembly core and the English
+language model out of `node_modules` into `public/tesseract/`. Those files are
+git-ignored — they're large and reproducible from the lockfile.
 
-By default SFML builds shared libraries and this default is inherited by your project.
-CMake's [`BUILD_SHARED_LIBS`](https://cmake.org/cmake/help/latest/variable/BUILD_SHARED_LIBS.html) option lets you pick static or shared libraries for the entire project.
+The built output in `dist/` is plain static files and can be served from any
+static host, including a subdirectory (asset paths are relative).
 
-### Change Compilers
+## Installing it on a phone
 
-See the variety of [`CMAKE_<LANG>_COMPILER`](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_COMPILER.html) options.
-In particular you'll want to modify `CMAKE_CXX_COMPILER` to point to the C++ compiler you wish to use.
+It's a PWA. Open the deployed URL, then "Add to Home Screen". A service worker
+caches the app shell and assets, so after the first visit it opens and works with
+no network — including receipt scanning.
 
-### Change Compiler Optimizations
+## Backups matter
 
-CMake abstracts away specific optimizer flags through the [`CMAKE_BUILD_TYPE`](https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html) option.
-By default this project recommends `Release` builds which enable optimizations.
-Other build types include `Debug` builds which enable debug symbols but disable optimizations.
-If you're using a multi-configuration generator (as is often the case on Windows), you can modify the [`CMAKE_CONFIGURATION_TYPES`](https://cmake.org/cmake/help/latest/variable/CMAKE_CONFIGURATION_TYPES.html#variable:CMAKE_CONFIGURATION_TYPES) option.
+There is no cloud copy. If you clear your browser's site data, the data is gone.
+Settings has:
 
-### Change Generators
+- **Export backup (JSON)** — the complete dataset, with receipt photos inlined
+  (optional, since it makes the file much larger). This is the only way to move
+  data to another device.
+- **Export transactions (CSV)** — for a spreadsheet or a tax preparer.
+- **Restore from backup** — replaces everything currently in the app.
 
-While CMake will attempt to pick a suitable default generator, some systems offer a number of generators to choose from.
-Ubuntu, for example, offers Makefiles and Ninja as two potential options.
-For a list of generators, click [here](https://cmake.org/cmake/help/latest/manual/cmake-generators.7.html).
-To modify the generator you're using you must reconfigure your project providing a `-G` flag with a value corresponding to the generator you want.
-You can't simply modify an entry in the CMakeCache.txt file unlike the above options.
-Then you may rebuild your project with this new generator.
+The app also asks the browser for persistent storage and tells you in Settings
+whether it was granted. Without it, a browser under storage pressure may evict
+the database.
 
-## More Reading
+## How it's built
 
-Here are some useful resources if you want to learn more about CMake:
+React 19 + TypeScript, Vite, Zustand for state, `idb` for IndexedDB, Recharts
+for charts, Tesseract.js for OCR. No backend.
 
-- [How to Use CMake Without the Agonizing Pain - Part 1](https://alexreinking.com/blog/how-to-use-cmake-without-the-agonizing-pain-part-1.html)
-- [How to Use CMake Without the Agonizing Pain - Part 2](https://alexreinking.com/blog/how-to-use-cmake-without-the-agonizing-pain-part-2.html)
-- [Better CMake YouTube series by Jefferon Amstutz](https://www.youtube.com/playlist?list=PL8i3OhJb4FNV10aIZ8oF0AA46HgA2ed8g)
+```
+src/
+  types.ts              Domain model
+  store.ts              State and every mutation, with debounced persistence
+  lib/
+    money.ts            Integer-cent arithmetic and parsing
+    budget.ts           Allocation resolution and rollups
+    fi.ts               FI number, projections, Coast FI, savings rate
+    investments.ts      Portfolio, net worth, rebalancing
+    receiptParser.ts    OCR text → merchant, date, total, line items
+    ocr.ts              Tesseract worker, image preprocessing
+    db.ts               IndexedDB, migrations, storage quota
+    backup.ts           JSON/CSV export and import
+    palette.ts          Validated categorical palette, series folding
+  components/           Shared UI and the chart layer
+  pages/                One file per section
+scripts/
+  vendor-ocr-assets.mjs Copies the OCR runtime into public/
+```
+
+Two conventions hold throughout:
+
+- **Money is always an integer number of cents**, never a float dollar amount.
+- **Percentages are integer basis points**, where 10,000 bp = 100%.
+
+Both exist so repeated arithmetic can't accumulate binary-float drift in numbers
+you'll reconcile against a bank statement. Money parsing reads the typed digits
+as strings rather than multiplying a float, because `Number('1.005') * 100` is
+`100.49999999999999` — the float route quietly turns $1.005 into $1.00.
+
+The financial logic is covered by unit tests (`npm test`), including that the
+projection matches a closed-form annuity, that proportional splits never lose or
+invent a cent, and that the receipt parser picks the right total out of realistic
+noise.
+
+### Charts
+
+Chart form follows the data's job rather than variety: a ratio against a limit is
+a meter, part-to-whole is a horizontal stacked bar, a trend is a line, and the FI
+projection is a stacked area that separates contributions from growth. There is
+no pie chart and no dual-axis chart anywhere.
+
+Series colors come from a categorical palette validated for colorblind
+separation and lightness band in both light and dark mode; the slot **order** is
+the safety mechanism, so it isn't cosmetic. Past seven series the tail folds into
+a neutral "Other" rather than generating a new hue. Three light-mode slots sit
+below 3:1 contrast against the surface, so every chart ships direct labels and a
+table view — that's the documented relief, not a nicety.
+
+## Limitations, stated plainly
+
+- **OCR accuracy varies.** Crisp printing scans well; faded thermal paper,
+  creases and bad light do not. The workflow assumes you'll check the total.
+- **Prices don't update.** No network means no quotes. Holdings are worth what
+  you last typed.
+- **Projections are arithmetic, not forecasts.** A single smooth rate of return,
+  steady contributions and unchanging spending are all fictions. A portfolio
+  averaging 7% still has years down 30%, and the order those years arrive in
+  matters as much as the average. This is not investment advice.
+- **One device.** No sync. Export/import is the transfer mechanism.
 
 ## License
 
-The source code is dual licensed under Public Domain and MIT -- choose whichever you prefer.
+MIT — see [LICENSE.md](LICENSE.md).
