@@ -29,12 +29,22 @@ async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
  */
 export async function exportBundle(
   data: AppData,
-  options: { includeReceipts?: boolean } = {},
+  options: { includeReceipts?: boolean; includeLinkCredentials?: boolean } = {},
 ): Promise<ExportBundle> {
-  const { includeReceipts = true } = options;
+  const { includeReceipts = true, includeLinkCredentials = false } = options;
 
   const bundle: ExportBundle = {
     ...data,
+    settings: {
+      ...data.settings,
+      linking: includeLinkCredentials
+        ? data.settings.linking
+        : // The provider secret can read every connected account. A backup
+          // file gets emailed and dropped in cloud folders in a way the
+          // browser's database does not, so the credential stays behind and
+          // the restoring device reconnects instead.
+          { ...data.settings.linking, userId: null, userSecret: null },
+    },
     exportedAt: new Date().toISOString(),
     appVersion: APP_VERSION,
   };

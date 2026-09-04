@@ -25,6 +25,8 @@ import {
   useFormatMoney,
 } from '../components/ui';
 import { DriftChart, MoneyTable, NetWorthBars, ShareTable, StackedShareBar } from '../components/charts';
+import LinkedAccounts from '../components/LinkedAccounts';
+import type { View } from '../App';
 
 const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
   us_stock: 'US stocks',
@@ -91,13 +93,30 @@ function AccountCard({ account }: { account: InvestmentAccount }) {
         className="cat-head"
         style={{ gridTemplateColumns: 'minmax(120px, 1.4fr) auto auto auto auto' }}
       >
-        <input
-          type="text"
-          className="cat-name-input"
-          value={account.name}
-          aria-label="Account name"
-          onChange={(e) => updateAccount(account.id, { name: e.target.value })}
-        />
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+          <input
+            type="text"
+            className="cat-name-input"
+            value={account.name}
+            aria-label="Account name"
+            onChange={(e) =>
+              updateAccount(account.id, {
+                name: e.target.value,
+                // Once renamed, a sync stops overwriting the name with
+                // whatever the brokerage calls the account.
+                ...(account.link ? { nameOverridden: true } : {}),
+              })
+            }
+          />
+          {account.link && (
+            <span
+              className="badge"
+              title={`Linked to ${account.link.institution}. Holdings are replaced on each sync.`}
+            >
+              ⇄ linked
+            </span>
+          )}
+        </span>
         <select
           value={account.kind}
           aria-label="Account type"
@@ -188,6 +207,14 @@ function AccountCard({ account }: { account: InvestmentAccount }) {
               )}
             </Field>
           </div>
+
+          {account.link && (
+            <p className="field-hint" style={{ margin: '0 0 10px' }}>
+              Holdings below come from {account.link.institution} and are replaced on each sync —
+              edits to them will not survive. The contribution, match and tax treatment above are
+              yours and are always kept.
+            </p>
+          )}
 
           {account.holdings.length === 0 ? (
             <p className="muted" style={{ fontSize: 13, margin: '0 0 10px' }}>
@@ -322,7 +349,7 @@ function AccountCard({ account }: { account: InvestmentAccount }) {
   );
 }
 
-export default function InvestmentsPage() {
+export default function InvestmentsPage({ onNavigate }: { onNavigate: (view: View) => void }) {
   const data = useStore((s) => s.data);
   const {
     addAccount,
@@ -421,6 +448,8 @@ export default function InvestmentsPage() {
       </div>
 
       <div className="stack">
+        <LinkedAccounts onNavigate={onNavigate} />
+
         {portfolio.blendedExpenseRatioBps > 0 && (
           <Callout tone={portfolio.blendedExpenseRatioBps > 50 ? 'warning' : 'neutral'}>
             Blended expense ratio{' '}

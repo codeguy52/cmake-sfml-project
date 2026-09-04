@@ -8,12 +8,27 @@ import type {
   IncomeSource,
   InvestmentAccount,
   Liability,
+  LinkSettings,
   OtherAsset,
   Subcategory,
   Transaction,
 } from './types';
 import { deleteReceipt, loadAppData, resetAll, saveAppData } from './lib/db';
 import { newId, seedAppData } from './lib/seed';
+import {
+  createPortalUrl,
+  disconnectAccount,
+  isLinkingConfigured,
+  linkCredentials,
+  registerUser,
+} from './lib/linking/client';
+import {
+  markSyncFailure,
+  mergeSnapshots,
+  unlinkAccount,
+  type SyncSummary,
+} from './lib/linking/sync';
+import { fetchSnapshots } from './lib/linking/client';
 
 /**
  * Application state.
@@ -101,6 +116,13 @@ export interface StoreState {
   updateLiability: (id: string, patch: Partial<Liability>) => void;
   removeLiability: (id: string) => void;
 
+  // Brokerage linking
+  updateLinkSettings: (patch: Partial<LinkSettings>) => void;
+  connectBrokerage: (returnUrl: string) => Promise<string>;
+  syncLinkedAccounts: () => Promise<SyncSummary>;
+  unlinkAccountById: (accountId: string, revokeAtProvider: boolean) => Promise<void>;
+  syncing: boolean;
+
   // Settings & whole-dataset operations
   updateSettings: (patch: Partial<AppSettings>) => void;
   updateFISettings: (patch: Partial<FISettings>) => void;
@@ -138,6 +160,7 @@ export const useStore = create<StoreState>((set, get) => {
     data: seedAppData(),
     loading: true,
     error: null,
+    syncing: false,
 
     load: async () => {
       try {
@@ -411,6 +434,96 @@ export const useStore = create<StoreState>((set, get) => {
 
     removeLiability: (id) =>
       mutate((data) => ({ ...data, liabilities: data.liabilities.filter((l) => l.id !== id) })),
+
+    updateLinkSettings: (patch) =>
+      mutate((data) => ({
+        ...data,
+        settings: { ...data.settings, linking: { ...data.settings.linking, ...patch } },
+      })),
+
+    /**
+     * Start a brokerage connection.
+     *
+     * Registers a provider identity on first use, then returns the portal URL
+     * for the caller to navigate to. The user's brokerage credentials are
+     * entered at the aggregator and never reach this app or its backend.
+     */
+    connectBrokerage: async (returnUrl) => {
+      const settings = get().data.settings.linking;
+      if (!isLinkingConfigured(settings)) {
+        throw new Error('Set a backend URL and accept the linking notice in Settings first.');
+      }
+
+      let { userId, userSecret } = settings;
+      if (!userId || !userSecret) {
+        const registered = await registerUser(settings.backendUrl);
+        userId = registered.userId;
+        userSecret = registered.userSecret;
+        // Persist immediately and synchronously — losing this identity after
+        // the provider has issued it strands the connection at their end.
+        const next = {
+          ...get().data,
+          settings: {
+            ...get().data.settings,
+            linking: { ...settings, userId, userSecret },
+          },
+        };
+        set({ data: next });
+        await saveAppData(next);
+      }
+
+      const creds = linkCredentials(get().data.settings.linking);
+      if (!creds) throw new Error('Linking is not configured.');
+
+      const { redirectUri } = await createPortalUrl(creds, returnUrl);
+      return redirectUri;
+    },
+
+    /**
+     * Pull current holdings for every connected account and merge them in.
+     *
+     * A failed sync records the error against the linked accounts rather than
+     * clearing them, so the UI can show the last known figures and say plainly
+     * that they are stale.
+     */
+    syncLinkedAccounts: async () => {
+      const creds = linkCredentials(get().data.settings.linking);
+      if (!creds) throw new Error('Linking is not configured.');
+
+      set({ syncing: true });
+      try {
+        const snapshots = await fetchSnapshots(creds);
+        const result = mergeSnapshots(get().data.accounts, snapshots, creds.provider);
+        mutate((data) => ({ ...data, accounts: result.accounts }));
+        return result.summary;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Sync failed.';
+        mutate((data) => ({
+          ...data,
+          accounts: markSyncFailure(data.accounts, creds.provider, message),
+        }));
+        throw error;
+      } finally {
+        set({ syncing: false });
+      }
+    },
+
+    /**
+     * Detach an account from its connection. The holdings stay as ordinary
+     * manual entries — disconnecting is not a request to delete a portfolio.
+     */
+    unlinkAccountById: async (accountId, revokeAtProvider) => {
+      const account = get().data.accounts.find((a) => a.id === accountId);
+      const creds = linkCredentials(get().data.settings.linking);
+
+      if (revokeAtProvider && account?.link && creds) {
+        // Revoking can fail (already revoked, provider down); the local
+        // unlink should still go through so the user isn't stuck.
+        await disconnectAccount(creds, account.link.providerAccountId).catch(() => undefined);
+      }
+
+      mutate((data) => ({ ...data, accounts: unlinkAccount(data.accounts, accountId) }));
+    },
 
     updateSettings: (patch) =>
       mutate((data) => ({ ...data, settings: { ...data.settings, ...patch } })),

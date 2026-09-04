@@ -1,0 +1,14 @@
+{
+  "name": "ember-linking-backend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Holds the aggregator credentials so the browser never has to. Node built-ins only.",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "PROVIDER=mock ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:4173 node src/server.js"
+  }
+}
