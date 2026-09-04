@@ -5,6 +5,7 @@ import BudgetPage from './pages/BudgetPage';
 import ReceiptsPage from './pages/ReceiptsPage';
 import TransactionsPage from './pages/TransactionsPage';
 import InvestmentsPage from './pages/InvestmentsPage';
+import InvestPage from './pages/InvestPage';
 import FIPage from './pages/FIPage';
 import SettingsPage, { applyTheme, readThemePreference } from './pages/SettingsPage';
 
@@ -14,6 +15,7 @@ export type View =
   | 'receipts'
   | 'transactions'
   | 'investments'
+  | 'invest'
   | 'fi'
   | 'settings';
 
@@ -23,6 +25,7 @@ const NAV: { view: View; label: string; short: string; icon: string }[] = [
   { view: 'receipts', label: 'Scan receipt', short: 'Scan', icon: '⬛' },
   { view: 'transactions', label: 'Transactions', short: 'Activity', icon: '≡' },
   { view: 'investments', label: 'Investments', short: 'Invest', icon: '◫' },
+  { view: 'invest', label: 'How to invest', short: 'Learn', icon: '◆' },
   { view: 'fi', label: 'Independence', short: 'FI', icon: '◎' },
   { view: 'settings', label: 'Settings', short: 'Settings', icon: '⚙' },
 ];
@@ -121,7 +124,8 @@ export default function App() {
             {view === 'budget' && <BudgetPage />}
             {view === 'receipts' && <ReceiptsPage />}
             {view === 'transactions' && <TransactionsPage />}
-            {view === 'investments' && <InvestmentsPage />}
+            {view === 'investments' && <InvestmentsPage onNavigate={navigate} />}
+            {view === 'invest' && <InvestPage onNavigate={navigate} />}
             {view === 'fi' && <FIPage />}
             {view === 'settings' && <SettingsPage />}
           </>

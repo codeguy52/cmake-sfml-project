@@ -10,6 +10,8 @@ import {
   transactionsToCsv,
 } from '../lib/backup';
 import { requestPersistentStorage, type StorageEstimate } from '../lib/db';
+import { checkBackend, normalizeBackendUrl } from '../lib/linking/client';
+import { linkedAccounts } from '../lib/linking/sync';
 import { Callout, Card, ConfirmButton, EmptyState, Field, Segmented } from '../components/ui';
 
 type ThemePreference = 'system' | 'light' | 'dark';
@@ -46,6 +48,136 @@ function formatBytes(bytes: number): string {
 }
 
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CHF', 'SEK', 'NZD', 'INR'];
+
+/**
+ * Brokerage linking configuration.
+ *
+ * This is the only screen in the app that turns on network access, so it is
+ * explicit about what leaves the device and requires a deliberate opt-in
+ * rather than treating a filled-in URL as consent.
+ */
+function LinkingCard() {
+  const data = useStore((s) => s.data);
+  const { updateLinkSettings } = useStore();
+  const settings = data.settings.linking;
+
+  const [url, setUrl] = useState(settings.backendUrl);
+  const [checking, setChecking] = useState(false);
+  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const linked = linkedAccounts(data.accounts);
+  const connected = settings.consentedAt !== null && normalizeBackendUrl(settings.backendUrl) !== '';
+
+  const test = async (): Promise<void> => {
+    setChecking(true);
+    setStatus(null);
+    try {
+      const result = await checkBackend(url);
+      setStatus({ ok: true, text: `Reachable. Provider: ${result.provider}.` });
+      updateLinkSettings({ backendUrl: normalizeBackendUrl(url) });
+    } catch (e) {
+      setStatus({ ok: false, text: e instanceof Error ? e.message : 'Could not reach it.' });
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return (
+    <Card
+      title="Link a brokerage"
+      note="Optional. Off by default — with no backend configured the app makes no network requests at all."
+    >
+      <div className="stack-sm">
+        <Callout tone="warning">
+          <strong>This is the one feature that sends data off your device.</strong> Holdings and
+          balances travel from your brokerage, through an aggregator, through a backend you deploy,
+          to this app. Your brokerage password is typed at the aggregator and never reaches this app
+          or your backend — but the aggregator does see your accounts. Everything else in Ember stays
+          local whether this is on or off.
+        </Callout>
+
+        <Field
+          label="Your linking backend URL"
+          hint="The small server from the repo's server/ directory, deployed somewhere with your aggregator keys."
+        >
+          {(id) => (
+            <input
+              id={id}
+              type="text"
+              value={url}
+              placeholder="https://your-backend.example.com"
+              onChange={(e) => setUrl(e.target.value)}
+            />
+          )}
+        </Field>
+
+        <div className="btn-row">
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={checking || url.trim().length === 0}
+            onClick={() => void test()}
+          >
+            {checking ? 'Checking…' : 'Test connection'}
+          </button>
+
+          {!connected ? (
+            <button
+              type="button"
+              className="btn btn-sm btn-primary"
+              disabled={normalizeBackendUrl(url).length === 0}
+              onClick={() => {
+                updateLinkSettings({
+                  backendUrl: normalizeBackendUrl(url),
+                  consentedAt: Date.now(),
+                });
+              }}
+            >
+              I understand — enable linking
+            </button>
+          ) : (
+            <ConfirmButton
+              className="btn btn-sm btn-danger"
+              confirmLabel="Turn off"
+              onConfirm={() =>
+                // Clears the credential and stops all network access. Already
+                // synced holdings stay put as ordinary data.
+                updateLinkSettings({
+                  consentedAt: null,
+                  userId: null,
+                  userSecret: null,
+                  backendUrl: '',
+                })
+              }
+            >
+              Turn linking off
+            </ConfirmButton>
+          )}
+        </div>
+
+        {status && (
+          <Callout tone={status.ok ? 'good' : 'critical'}>{status.text}</Callout>
+        )}
+
+        {connected && (
+          <p className="field-hint" style={{ margin: 0 }}>
+            Linking is on. {linked.length} account{linked.length === 1 ? '' : 's'} connected —
+            manage them on the Investments page.
+            {settings.userSecret
+              ? ' A provider credential is stored on this device; it is deliberately excluded from exported backups.'
+              : ' No provider identity yet — connecting a brokerage will create one.'}
+          </p>
+        )}
+
+        <p className="field-hint" style={{ margin: 0 }}>
+          Setup instructions are in <code>server/README.md</code>. Running it locally with{' '}
+          <code>npm run dev</code> uses a built-in mock brokerage, so you can try the whole flow
+          without an aggregator account.
+        </p>
+      </div>
+    </Card>
+  );
+}
 
 export default function SettingsPage() {
   const data = useStore((s) => s.data);
@@ -180,6 +312,8 @@ export default function SettingsPage() {
             </div>
           </div>
         </Card>
+
+        <LinkingCard />
 
         <Card
           title="Backups"

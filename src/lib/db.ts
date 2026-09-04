@@ -68,6 +68,10 @@ export function migrate(data: AppData): AppData {
       ...seeded.settings,
       ...data.settings,
       fi: { ...seeded.settings.fi, ...data.settings?.fi },
+      // Schema 2 added linking. A version-1 dataset has no `linking` block, so
+      // the seeded default (backend URL empty, i.e. linking off) fills in and
+      // the app keeps behaving exactly as it did before the upgrade.
+      linking: { ...seeded.settings.linking, ...data.settings?.linking },
       schemaVersion: SCHEMA_VERSION,
     },
     categories: (data.categories ?? []).map((c) => ({

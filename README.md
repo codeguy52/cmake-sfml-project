@@ -6,9 +6,12 @@ device.
 
 Everything you enter — budgets, transactions, receipt photos, account balances —
 is stored in your browser's IndexedDB on the device you entered it on. There is
-no account, no server and no sync. The app makes **no network requests at all**
-after it loads: even the OCR engine and its language model are served from the
-app's own origin.
+no account and no sync.
+
+Out of the box the app makes **no network requests at all** after it loads: even
+the OCR engine and its language model are served from the app's own origin. The
+single exception is brokerage linking, which is **off by default** and has to be
+switched on deliberately — see [Linking a brokerage](#linking-a-brokerage).
 
 ## What it does
 
@@ -34,10 +37,19 @@ committed until you press Save. Manual entry is always available as a first-clas
 path, with or without a photo.
 
 **Investments.** Accounts by tax treatment (401(k), IRA, Roth, HSA, taxable,
-etc.), holdings with cost basis and hand-entered prices, allocation by asset
-class and by account, drift from a target mix, blended expense ratio and what it
-costs you per year, plus other assets and debts rolled into net worth. Prices are
-manual by design — a live quote would mean a network call.
+etc.), holdings with cost basis, allocation by asset class and by account, drift
+from a target mix, blended expense ratio and what it costs you per year, plus
+other assets and debts rolled into net worth. Enter holdings by hand, or link a
+brokerage and have them synced.
+
+**How to invest.** The widely-taught order of operations — starter emergency
+fund → employer match → expensive debt → full emergency fund → HSA → IRA →
+workplace plan → taxable — evaluated against your own numbers, so it can tell
+you that you're $300 a month short of your match rather than describing the
+concept. Plus reference material on index funds, fees, account types and risk.
+It is framed throughout as education rather than advice, names no products, and
+deliberately hardcodes no contribution limits: those change annually, and a
+stale figure stated confidently is worse than none.
 
 **Financial independence.** Your FI number from the withdrawal rate you choose,
 progress toward it, what your portfolio already covers each month, Coast FI, a
@@ -104,6 +116,46 @@ for a quick look and the app itself works, but browsers refuse to register a
 service worker on a plain-HTTP origin, so there's no install and no offline
 mode. GitHub Pages is HTTPS, so it gets the full behaviour.
 
+## Linking a brokerage
+
+Optional, off by default, and the only feature that sends anything off your
+device.
+
+Aggregators authenticate with API keys that cannot ship in a web app — anything
+the browser holds is readable by anyone with devtools, and those keys can
+enumerate every account connected under them. So linking needs a small backend
+of your own to hold them. `server/` contains one: dependency-free Node, stores
+nothing, deployable to any free tier.
+
+```sh
+cd server && npm run dev    # runs against a built-in mock brokerage
+```
+
+Then **Settings → Link a brokerage** → `http://localhost:8787` → **Test
+connection** → **I understand — enable linking**. The mock lets you exercise the
+entire connect → sync → disconnect flow with no aggregator account.
+
+For real accounts, see [`server/README.md`](server/README.md). Note that the
+SnapTrade adapter was written from the published spec in an environment with no
+network access to SnapTrade, so it is **unverified against the live API** — the
+README says what to check first.
+
+### What a sync does and doesn't touch
+
+| Owned by the provider (replaced each sync) | Owned by you (always kept) |
+|---|---|
+| Holdings, share counts, prices | Monthly contribution and employer match |
+| Account balance and institution | Account type and tax treatment |
+| Account name, until you rename it | The name, once you've renamed it |
+
+An account the provider stops returning is **marked, never deleted** — a revoked
+connection must not silently wipe the portfolio your FI projection is built on.
+Disconnecting keeps the holdings as ordinary manual entries.
+
+The provider credential is stored on your device and is **excluded from exported
+backups by default**, since a backup file gets emailed around in a way the
+browser's database does not.
+
 ## Backups matter
 
 There is no cloud copy. If you clear your browser's site data, the data is gone.
@@ -133,13 +185,19 @@ src/
     budget.ts           Allocation resolution and rollups
     fi.ts               FI number, projections, Coast FI, savings rate
     investments.ts      Portfolio, net worth, rebalancing
+    guidance.ts         Order-of-operations engine for the invest tab
     receiptParser.ts    OCR text → merchant, date, total, line items
     ocr.ts              Tesseract worker, image preprocessing
     db.ts               IndexedDB, migrations, storage quota
     backup.ts           JSON/CSV export and import
     palette.ts          Validated categorical palette, series folding
+    linking/
+      types.ts          Provider-neutral snapshot shape
+      client.ts         Talks to your backend; inert until configured
+      sync.ts           Merge rules — what a sync may and may not overwrite
   components/           Shared UI and the chart layer
   pages/                One file per section
+server/                 Optional linking backend (see server/README.md)
 scripts/
   vendor-ocr-assets.mjs Copies the OCR runtime into public/
 ```
@@ -177,13 +235,21 @@ table view — that's the documented relief, not a nicety.
 
 - **OCR accuracy varies.** Crisp printing scans well; faded thermal paper,
   creases and bad light do not. The workflow assumes you'll check the total.
-- **Prices don't update.** No network means no quotes. Holdings are worth what
-  you last typed.
+- **Prices only update when you sync.** Without linking, holdings are worth what
+  you last typed. With it, they are worth what the last sync said — there are no
+  live streaming quotes.
+- **The SnapTrade adapter is unverified.** It was written from the published
+  spec with no way to reach the live API. The mock provider and every app-side
+  path are tested; the real adapter needs a first run with your credentials.
 - **Projections are arithmetic, not forecasts.** A single smooth rate of return,
   steady contributions and unchanging spending are all fictions. A portfolio
   averaging 7% still has years down 30%, and the order those years arrive in
   matters as much as the average. This is not investment advice.
-- **One device.** No sync. Export/import is the transfer mechanism.
+- **One device.** No sync between devices. Export/import is the transfer
+  mechanism, and it deliberately leaves the linking credential behind.
+- **The invest tab is education, not advice.** It applies a general rule of
+  thumb to numbers you entered. It knows nothing about your tax situation, job
+  security, health or family, and it will never name a fund to buy.
 
 ## License
 

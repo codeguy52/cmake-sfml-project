@@ -1,7 +1,7 @@
 import type { AppData, AppSettings, Category } from '../types';
 import { slotColor } from './palette';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export function newId(prefix = 'id'): string {
   // crypto.randomUUID needs a secure context; the fallback keeps a plain
@@ -17,6 +17,15 @@ export const DEFAULT_SETTINGS: AppSettings = {
   currency: 'USD',
   locale: 'en-US',
   schemaVersion: SCHEMA_VERSION,
+  // Linking is off by default: with no backend URL the app makes no network
+  // requests at all, which is the behaviour every other feature assumes.
+  linking: {
+    backendUrl: '',
+    provider: 'snaptrade',
+    userId: null,
+    userSecret: null,
+    consentedAt: null,
+  },
   fi: {
     safeWithdrawalRateBps: 400, // the 4% rule
     expectedReturnBps: 700,

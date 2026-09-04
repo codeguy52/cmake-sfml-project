@@ -134,6 +134,32 @@ export interface Holding {
   expenseRatioBps?: Bps;
 }
 
+/** Aggregators this app knows how to talk to. */
+export type LinkProvider = 'snaptrade';
+
+/**
+ * Marks an account as owned by a brokerage connection rather than by hand.
+ *
+ * Holdings and balances on a linked account are replaced wholesale on each
+ * sync; the fields a person sets themselves (the display name, contribution
+ * amounts, the FI treatment) are preserved. See `lib/linking/sync.ts`.
+ */
+export interface AccountLink {
+  provider: LinkProvider;
+  /** The provider's id for this account — the key syncs match on. */
+  providerAccountId: string;
+  /** Institution name as the provider reports it, e.g. "Fidelity". */
+  institution: string;
+  /** Last four of the account number, when the provider gives one. */
+  mask?: string;
+  /** Epoch ms of the last successful sync, or null if never. */
+  lastSyncedAt: number | null;
+  /** Why the last sync failed, so stale figures can be labelled as stale. */
+  lastError?: string;
+  /** Set when the provider stops returning this account — never auto-deleted. */
+  missingSince?: number;
+}
+
 export interface InvestmentAccount {
   id: string;
   name: string;
@@ -145,6 +171,10 @@ export interface InvestmentAccount {
   /** Employer match per month, if any. Counts toward FI, not toward your savings rate denominator. */
   employerMatchCents?: Cents;
   archived?: boolean;
+  /** Present only on accounts backed by a brokerage connection. */
+  link?: AccountLink;
+  /** True once the user renames a linked account, so a sync stops overwriting it. */
+  nameOverridden?: boolean;
 }
 
 /** Non-investment assets: a house, a car, anything that isn't funding retirement. */
@@ -179,10 +209,33 @@ export interface FISettings {
   targetRetirementAge: number | null;
 }
 
+/**
+ * Brokerage linking configuration.
+ *
+ * Linking is the one feature in this app that touches the network, so it is
+ * off until deliberately switched on: no backend URL means no requests, and
+ * the rest of the app behaves exactly as before.
+ *
+ * `userSecret` is a credential that can read the connected accounts, so it is
+ * excluded from exported backups by default — a backup file gets emailed
+ * around in a way the browser's database does not.
+ */
+export interface LinkSettings {
+  /** Base URL of the small backend the user deploys. Empty disables linking. */
+  backendUrl: string;
+  provider: LinkProvider;
+  /** Provider identity for this device, issued by the backend on registration. */
+  userId: string | null;
+  userSecret: string | null;
+  /** When the user accepted that linking sends data off the device. */
+  consentedAt: number | null;
+}
+
 export interface AppSettings {
   currency: string;
   locale: string;
   fi: FISettings;
+  linking: LinkSettings;
   /** Schema version, so an imported backup from an older build can be migrated. */
   schemaVersion: number;
 }
