@@ -1,0 +1,10 @@
+{
+  "//": "Deno Deploy entry: set the project's entry point to server/src/worker.js. Run locally with `deno task dev:personal`.",
+  "imports": {
+    "snaptrade-typescript-sdk": "npm:snaptrade-typescript-sdk@^12.2.3"
+  },
+  "tasks": {
+    "dev": "PROVIDER=mock ALLOWED_ORIGINS=http://localhost:5173 deno serve --allow-net --allow-env --port 8787 src/worker.js",
+    "dev:personal": "PROVIDER=mock-personal ALLOWED_ORIGINS=http://localhost:5173 deno serve --allow-net --allow-env --port 8787 src/worker.js"
+  }
+}

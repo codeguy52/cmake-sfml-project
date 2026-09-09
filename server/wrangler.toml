@@ -1,0 +1,22 @@
+# Cloudflare Workers deployment.
+#
+#   npx wrangler secret put SNAPTRADE_CLIENT_ID
+#   npx wrangler secret put SNAPTRADE_CONSUMER_KEY
+#   npx wrangler deploy
+#
+# Secrets are set with `wrangler secret put`, never in this file — it is
+# committed, and a consumer key in git is a consumer key you have to rotate.
+
+name = "ember-linking"
+main = "src/worker.js"
+compatibility_date = "2024-09-23"
+
+# The SnapTrade SDK signs with Web Crypto, but `nodejs_compat` covers the
+# handful of Node built-ins its HTTP client still reaches for.
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# Not a secret: the origins allowed to call this backend. Replace with your own
+# deployed app URL — an empty value blocks every browser request.
+ALLOWED_ORIGINS = "http://localhost:5173"
+# SNAPTRADE_AUTH_MODE = "commercial"   # default is personal

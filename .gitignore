@@ -9,6 +9,14 @@ dist
 # scripts/vendor-ocr-assets.mjs, so it is not committed.
 public/tesseract/
 
+# Local secrets. The linking backend's API keys belong in a host's secret
+# store or an untracked file here — never in a commit. `.dev.vars` is
+# Wrangler's local equivalent.
+.env
+.env.*
+.dev.vars
+.wrangler/
+
 # Editors and tooling
 .idea
 .vs

@@ -9,6 +9,7 @@
   },
   "scripts": {
     "start": "node src/server.js",
+    "test": "node --test \"src/*.test.js\"",
     "dev": "PROVIDER=mock ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:4173 node src/server.js",
     "dev:personal": "PROVIDER=mock-personal ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:4173 node src/server.js"
   },

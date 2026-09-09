@@ -136,8 +136,15 @@ Then **Settings → Link a brokerage** → `http://localhost:8787` → **Test
 connection** → **I understand — enable linking**. The mock lets you exercise the
 whole flow with no SnapTrade account.
 
+Its routing is a plain `Request → Response` function, so the same backend runs
+on your machine during development and on Cloudflare Workers or Deno Deploy in
+production — both free tiers that stay awake, which matters because a sleeping
+host makes the first sync of the day look like a failure. A Node host (Render,
+Railway, Fly.io, a VPS) works unchanged.
+
 For real accounts, see [`server/README.md`](server/README.md). Two API keys go
-into your host's environment; nothing is stored on your device.
+into your host's secret store; nothing is stored on your device, and they never
+belong in this repo.
 
 ### Personal vs commercial mode
 
@@ -219,6 +226,9 @@ src/
   components/           Shared UI and the chart layer
   pages/                One file per section
 server/                 Optional linking backend (see server/README.md)
+  src/app.js            Routing, as a Request -> Response function
+  src/server.js         Node entry
+  src/worker.js         Cloudflare Workers / Deno Deploy entry
 scripts/
   vendor-ocr-assets.mjs Copies the OCR runtime into public/
 ```
