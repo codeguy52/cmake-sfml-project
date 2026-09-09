@@ -36,6 +36,12 @@ export interface RemotePosition {
   /** Total cost basis when the provider reports it. */
   costBasisCents?: Cents;
   currency: string;
+  /**
+   * Set when the provider's value for this position cannot be trusted without
+   * a human looking at it — currently option positions, where the 100x
+   * contract multiplier may or may not already be applied.
+   */
+  needsReview?: boolean;
 }
 
 export interface RemoteSnapshot {
@@ -43,6 +49,12 @@ export interface RemoteSnapshot {
   positions: RemotePosition[];
   /** Uninvested cash, held as a synthetic position so it isn't lost. */
   cashCents?: Cents;
+  /**
+   * Things the backend could not represent faithfully — foreign-currency cash
+   * it refused to add to a total, option positions needing confirmation. These
+   * are shown to the user rather than swallowed.
+   */
+  warnings?: string[];
 }
 
 /** Registration response — the identity the device keeps for later calls. */
@@ -80,6 +92,9 @@ export interface LinkCredentials {
 export function mapAssetClass(hint: string | undefined, symbol: string): AssetClass {
   const text = `${hint ?? ''} ${symbol}`.toLowerCase();
 
+  // Options are their own thing; classifying them as equity would quietly
+  // fold an unreviewed value into the stock allocation.
+  if (/\boption\b|\bcall\b|\bput\b/.test(text)) return 'other';
   if (/crypto|bitcoin|btc|ethereum|eth\b/.test(text)) return 'crypto';
   if (/bond|treasury|fixed.?income|agg\b|bnd\b|tlt\b|govt/.test(text)) return 'bond';
   if (/reit|real.?estate|vnq\b/.test(text)) return 'reit';

@@ -1,4 +1,4 @@
-import type { LinkSettings } from '../../types';
+import type { LinkAuthMode, LinkSettings } from '../../types';
 import type {
   LinkCredentials,
   LinkError,
@@ -44,13 +44,24 @@ export function isLinkingConfigured(settings: LinkSettings): boolean {
 }
 
 export function linkCredentials(settings: LinkSettings): LinkCredentials | null {
-  if (!isLinkingConfigured(settings) || !settings.userId || !settings.userSecret) return null;
-  return {
+  if (!isLinkingConfigured(settings)) return null;
+
+  const base = {
     backendUrl: normalizeBackendUrl(settings.backendUrl),
     provider: settings.provider,
-    userId: settings.userId,
-    userSecret: settings.userSecret,
   };
+
+  // Personal mode has no per-device credential to hold: the backend's own API
+  // key identifies the user, so these are sent empty and ignored there.
+  if (settings.mode === 'personal') return { ...base, userId: '', userSecret: '' };
+
+  if (!settings.userId || !settings.userSecret) return null;
+  return { ...base, userId: settings.userId, userSecret: settings.userSecret };
+}
+
+/** Personal mode is already usable the moment linking is switched on. */
+export function canSyncWithoutConnecting(settings: LinkSettings): boolean {
+  return isLinkingConfigured(settings) && settings.mode === 'personal';
 }
 
 async function post<T>(baseUrl: string, path: string, body: unknown): Promise<T> {
@@ -145,7 +156,18 @@ export async function disconnectAccount(
   });
 }
 
-/** Confirm a backend is reachable and speaks the expected contract. */
-export async function checkBackend(backendUrl: string): Promise<{ provider: string; ok: boolean }> {
-  return post<{ provider: string; ok: boolean }>(backendUrl, '/api/link/health', {});
+/**
+ * Confirm a backend is reachable, its credentials work, and report which auth
+ * mode it runs in. The backend exercises the provider on this call, so a wrong
+ * API key fails here rather than showing up later as an empty sync.
+ */
+export async function checkBackend(
+  backendUrl: string,
+): Promise<{ provider: string; ok: boolean; mode: LinkAuthMode }> {
+  const result = await post<{ provider: string; ok: boolean; mode?: LinkAuthMode }>(
+    backendUrl,
+    '/api/link/health',
+    {},
+  );
+  return { ...result, mode: result.mode ?? 'personal' };
 }

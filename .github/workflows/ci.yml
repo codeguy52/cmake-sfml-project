@@ -30,3 +30,23 @@ jobs:
       # missing OCR asset fails here rather than in someone's browser.
       - name: Build
         run: npm run build
+
+      # The linking backend is real code that the app build never touches, so
+      # boot it against the mock provider and check it answers. Catches a
+      # syntax error or a broken import before a deploy does.
+      - name: Smoke-test the linking backend
+        working-directory: server
+        run: |
+          npm ci
+          PROVIDER=mock-personal ALLOWED_ORIGINS=http://localhost node src/server.js &
+          for i in $(seq 1 20); do
+            sleep 0.5
+            if curl -sf -X POST http://127.0.0.1:8787/api/link/health \
+                 -H 'Content-Type: application/json' -d '{}' -o health.json; then
+              break
+            fi
+          done
+          cat health.json
+          grep -q '"mode":"personal"' health.json
+          curl -sf -X POST http://127.0.0.1:8787/api/link/holdings \
+            -H 'Content-Type: application/json' -d '{}' | grep -q 'snapshots'

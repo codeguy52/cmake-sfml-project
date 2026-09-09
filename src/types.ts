@@ -132,6 +132,12 @@ export interface Holding {
   priceCents: Cents;
   /** Fund expense ratio in bp, e.g. 3 = 0.03%. Used for the drag estimate. */
   expenseRatioBps?: Bps;
+  /**
+   * Synced from a provider but not safe to trust unchecked — option positions,
+   * where the contract multiplier is ambiguous. The UI flags these rather than
+   * letting an unverified figure sit silently inside a net-worth total.
+   */
+  needsReview?: boolean;
 }
 
 /** Aggregators this app knows how to talk to. */
@@ -220,11 +226,22 @@ export interface FISettings {
  * excluded from exported backups by default — a backup file gets emailed
  * around in a way the browser's database does not.
  */
+export type LinkAuthMode = 'personal' | 'commercial';
+
 export interface LinkSettings {
   /** Base URL of the small backend the user deploys. Empty disables linking. */
   backendUrl: string;
   provider: LinkProvider;
-  /** Provider identity for this device, issued by the backend on registration. */
+  /**
+   * Which auth mode the backend reports.
+   *
+   * In `personal` the API key held by the backend *is* the identity: there is
+   * no registration step, no user parameters on any call, and this device
+   * stores no provider credential at all. `commercial` is the multi-tenant
+   * path, where a user is registered and issued to this device.
+   */
+  mode: LinkAuthMode;
+  /** Provider identity for this device. Always null in personal mode. */
   userId: string | null;
   userSecret: string | null;
   /** When the user accepted that linking sends data off the device. */

@@ -71,7 +71,13 @@ export function migrate(data: AppData): AppData {
       // Schema 2 added linking. A version-1 dataset has no `linking` block, so
       // the seeded default (backend URL empty, i.e. linking off) fills in and
       // the app keeps behaving exactly as it did before the upgrade.
-      linking: { ...seeded.settings.linking, ...data.settings?.linking },
+      // `mode` arrived later still, so an early linking block gets the default
+      // and is corrected the next time the backend is contacted.
+      linking: {
+        ...seeded.settings.linking,
+        ...data.settings?.linking,
+        mode: data.settings?.linking?.mode ?? seeded.settings.linking.mode,
+      },
       schemaVersion: SCHEMA_VERSION,
     },
     categories: (data.categories ?? []).map((c) => ({

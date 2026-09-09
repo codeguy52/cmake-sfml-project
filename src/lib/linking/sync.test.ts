@@ -4,6 +4,7 @@ import {
   CASH_SYMBOL,
   guessAccountKind,
   holdingsFromSnapshot,
+  holdingsNeedingReview,
   lastSyncedAt,
   markSyncFailure,
   mergeSnapshots,
@@ -25,6 +26,7 @@ function snapshot(overrides: Partial<RemoteSnapshot> & { id: string }): RemoteSn
     },
     positions: overrides.positions ?? [],
     ...(overrides.cashCents !== undefined ? { cashCents: overrides.cashCents } : {}),
+    ...(overrides.warnings !== undefined ? { warnings: overrides.warnings } : {}),
   };
 }
 
@@ -482,5 +484,85 @@ describe('lastSyncedAt', () => {
 
   it('is null when nothing has ever synced', () => {
     expect(lastSyncedAt([])).toBeNull();
+  });
+});
+
+describe('option positions and provider warnings', () => {
+  it('carries the review flag onto the holding', () => {
+    const holdings = holdingsFromSnapshot(
+      snapshot({
+        id: 'r1',
+        positions: [
+          { symbol: 'VOO', units: 1, priceCents: 50_000, currency: 'USD' },
+          {
+            symbol: 'AAPL 260116C00250000',
+            units: 2,
+            priceCents: 415,
+            currency: 'USD',
+            assetClassHint: 'option',
+            needsReview: true,
+          },
+        ],
+      }),
+      [],
+    );
+
+    expect(holdings[0]!.needsReview).toBeUndefined();
+    expect(holdings[1]!.needsReview).toBe(true);
+    // An option must not be folded into the equity allocation on a value the
+    // app has explicitly said it cannot verify.
+    expect(holdings[1]!.assetClass).toBe('other');
+  });
+
+  it('surfaces provider warnings against the account they came from', () => {
+    const { summary } = mergeSnapshots(
+      [],
+      [
+        snapshot({
+          id: 'r1',
+          account: {
+            id: 'r1',
+            name: 'Individual Brokerage',
+            institution: 'X',
+            balanceCents: 0,
+            currency: 'USD',
+          },
+          positions: [],
+          warnings: ['Cash held in CAD was not added to this USD account.'],
+        }),
+      ],
+      'snaptrade',
+      NOW,
+    );
+
+    expect(summary.warnings).toEqual([
+      'Individual Brokerage: Cash held in CAD was not added to this USD account.',
+    ]);
+  });
+
+  it('reports no warnings when the provider had nothing to flag', () => {
+    const { summary } = mergeSnapshots([], [snapshot({ id: 'r1' })], 'snaptrade', NOW);
+    expect(summary.warnings).toEqual([]);
+  });
+
+  it('finds review-needing holdings across accounts', () => {
+    const { accounts } = mergeSnapshots(
+      [],
+      [
+        snapshot({
+          id: 'r1',
+          positions: [
+            { symbol: 'OPT', units: 1, priceCents: 100, currency: 'USD', needsReview: true },
+            { symbol: 'VTI', units: 1, priceCents: 100, currency: 'USD' },
+          ],
+        }),
+      ],
+      'snaptrade',
+      NOW,
+    );
+
+    const flagged = holdingsNeedingReview(accounts);
+    expect(flagged).toHaveLength(1);
+    expect(flagged[0]!.holding.symbol).toBe('OPT');
   });
 });

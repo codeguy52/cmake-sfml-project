@@ -87,6 +87,14 @@ function requireUser(userId, userSecret) {
 export const mockProvider = {
   name: 'mock',
 
+  // The mock stands in for commercial mode, where a user is registered and
+  // then carried on every call — the path with the most moving parts.
+  mode: 'commercial',
+
+  async check() {
+    return true;
+  },
+
   async register() {
     const userId = `mock-${randomUUID()}`;
     const userSecret = randomUUID();
@@ -123,5 +131,85 @@ export const mockProvider = {
     if (user.accounts.length === before) {
       throw new ProviderError('No such account.', 404);
     }
+  },
+};
+
+/**
+ * Personal-mode mock.
+ *
+ * Mirrors how a personal SnapTrade API key behaves: the key is the identity,
+ * so there is no registration and no user parameters, and the brokerages are
+ * *already connected* before the app ever asks. It also returns the two things
+ * the commercial mock does not — an option position and cash in a second
+ * currency — so the review-and-warning paths are exercised rather than assumed.
+ *
+ * Run the backend with `PROVIDER=mock-personal`.
+ */
+export const mockPersonalProvider = {
+  name: 'mock-personal',
+  mode: 'personal',
+
+  async check() {
+    return true;
+  },
+
+  async register() {
+    // Nothing to register; the sentinel keeps the app's flow identical.
+    return { userId: 'personal', userSecret: 'personal' };
+  },
+
+  async portal(_user, returnUrl) {
+    const url = new URL(returnUrl);
+    url.searchParams.set('linked', 'mock-personal');
+    return { redirectUri: url.toString() };
+  },
+
+  async holdings() {
+    return [
+      {
+        account: {
+          id: 'personal-acct-taxable',
+          name: 'Individual Brokerage ...1102',
+          institution: 'Mock Personal Brokerage',
+          mask: '1102',
+          typeHint: 'INDIVIDUAL TAXABLE',
+          balanceCents: 4_820_11,
+          currency: 'USD',
+        },
+        positions: [
+          {
+            symbol: 'VOO',
+            description: 'Vanguard S&P 500 ETF',
+            assetClassHint: 'Equity ETF',
+            units: 8.125,
+            priceCents: 51_240,
+            costBasisCents: 380_00,
+            currency: 'USD',
+          },
+          {
+            symbol: 'AAPL  260116C00250000',
+            description: 'AAPL Jan 16 2026 250 Call',
+            assetClassHint: 'option',
+            units: 2,
+            priceCents: 4_15,
+            currency: 'USD',
+            needsReview: true,
+          },
+        ],
+        cashCents: 61_04,
+        warnings: [
+          'Cash held in CAD was not added to this USD account — this app does not convert currencies.',
+          '1 option position imported — check the value, since option prices may or may not ' +
+            'already include the 100x contract multiplier.',
+        ],
+      },
+    ];
+  },
+
+  async disconnect() {
+    throw new ProviderError(
+      'Personal-mode connections are managed in the SnapTrade dashboard, not from here.',
+      400,
+    );
   },
 };

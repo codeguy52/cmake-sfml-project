@@ -242,6 +242,15 @@ function AccountCard({ account }: { account: InvestmentAccount }) {
                     return (
                       <tr key={h.id}>
                         <td style={{ minWidth: 96 }}>
+                          {h.needsReview && (
+                            <span
+                              className="badge"
+                              style={{ color: STATUS.warning, borderColor: STATUS.warning, marginBottom: 3 }}
+                              title="Synced from your brokerage, but the value could not be verified. Option prices may or may not already include the 100x contract multiplier — check against your brokerage and correct the price if needed."
+                            >
+                              ! check value
+                            </span>
+                          )}
                           <input
                             type="text"
                             value={h.symbol}
@@ -414,8 +423,8 @@ export default function InvestmentsPage({ onNavigate }: { onNavigate: (view: Vie
       <header className="page-header">
         <h1 className="page-title">Investments</h1>
         <p className="page-subtitle">
-          Accounts, holdings and net worth. Prices are entered by hand — this app makes no network
-          calls, so nothing here is quoted live.
+          Accounts, holdings and net worth. Enter holdings by hand, or link a brokerage and have
+          them synced. Either way prices update only when you do — there are no live quotes.
         </p>
       </header>
 

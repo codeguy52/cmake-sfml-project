@@ -22,6 +22,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   linking: {
     backendUrl: '',
     provider: 'snaptrade',
+    mode: 'personal',
     userId: null,
     userSecret: null,
     consentedAt: null,
