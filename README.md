@@ -124,21 +124,30 @@ device.
 Aggregators authenticate with API keys that cannot ship in a web app — anything
 the browser holds is readable by anyone with devtools, and those keys can
 enumerate every account connected under them. So linking needs a small backend
-of your own to hold them. `server/` contains one: dependency-free Node, stores
-nothing, deployable to any free tier.
+of your own to hold them. `server/` contains one: a small Node service whose
+only dependency is the official SnapTrade SDK. It stores nothing and deploys to
+any free tier.
 
 ```sh
-cd server && npm run dev    # runs against a built-in mock brokerage
+cd server && npm install && npm run dev:personal
 ```
 
 Then **Settings → Link a brokerage** → `http://localhost:8787` → **Test
 connection** → **I understand — enable linking**. The mock lets you exercise the
-entire connect → sync → disconnect flow with no aggregator account.
+whole flow with no SnapTrade account.
 
-For real accounts, see [`server/README.md`](server/README.md). Note that the
-SnapTrade adapter was written from the published spec in an environment with no
-network access to SnapTrade, so it is **unverified against the live API** — the
-README says what to check first.
+For real accounts, see [`server/README.md`](server/README.md). Two API keys go
+into your host's environment; nothing is stored on your device.
+
+### Personal vs commercial mode
+
+In **personal mode** — the default, and the right one for running your own copy
+— your SnapTrade API key *is* the identity. There is no registration step, no
+credential on your device, and the brokerages already attached to your key are
+simply there when you press Sync. **Commercial mode** is the multi-tenant path,
+where each user is registered and issued their own identity.
+
+The backend reports its mode on the health check and the app adapts.
 
 ### What a sync does and doesn't touch
 
@@ -152,9 +161,21 @@ An account the provider stops returning is **marked, never deleted** — a revok
 connection must not silently wipe the portfolio your FI projection is built on.
 Disconnecting keeps the holdings as ordinary manual entries.
 
-The provider credential is stored on your device and is **excluded from exported
-backups by default**, since a backup file gets emailed around in a way the
-browser's database does not.
+In commercial mode the provider credential lives on your device and is
+**excluded from exported backups**, since a backup file gets emailed around in a
+way the browser's database does not. In personal mode there is no such
+credential to leak.
+
+### What a sync will not guess
+
+Two things are flagged rather than silently valued:
+
+- **Foreign-currency cash** is never added to an account in another currency —
+  this app does no FX conversion, and says so.
+- **Option positions** import with a `! check value` badge. Equity options are
+  quoted per share but held in contracts of 100, and whether SnapTrade's price
+  already accounts for that could not be verified. A figure wrong by 100× inside
+  a net-worth total is worse than an honest prompt to check.
 
 ## Backups matter
 
@@ -238,9 +259,11 @@ table view — that's the documented relief, not a nicety.
 - **Prices only update when you sync.** Without linking, holdings are worth what
   you last typed. With it, they are worth what the last sync said — there are no
   live streaming quotes.
-- **The SnapTrade adapter is unverified.** It was written from the published
-  spec with no way to reach the live API. The mock provider and every app-side
-  path are tested; the real adapter needs a first run with your credentials.
+- **The real SnapTrade path has never run against the live API.** It is built on
+  the official SDK rather than hand-rolled HTTP, which removes the request
+  signing as a source of error, but this repo had no network access to SnapTrade
+  to prove it end to end. Both mock providers and every app-side path are
+  tested; first contact with real data is yours.
 - **Projections are arithmetic, not forecasts.** A single smooth rate of return,
   steady contributions and unchanging spending are all fictions. A portfolio
   averaging 7% still has years down 30%, and the order those years arrive in

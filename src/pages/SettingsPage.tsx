@@ -73,8 +73,16 @@ function LinkingCard() {
     setStatus(null);
     try {
       const result = await checkBackend(url);
-      setStatus({ ok: true, text: `Reachable. Provider: ${result.provider}.` });
-      updateLinkSettings({ backendUrl: normalizeBackendUrl(url) });
+      setStatus({
+        ok: true,
+        text:
+          result.mode === 'personal'
+            ? `Reachable, credentials work. Personal mode — your API key is the identity, ` +
+              `so nothing is stored on this device.`
+            : `Reachable, credentials work. Commercial mode — this device will be issued its ` +
+              `own provider identity.`,
+      });
+      updateLinkSettings({ backendUrl: normalizeBackendUrl(url), mode: result.mode });
     } catch (e) {
       setStatus({ ok: false, text: e instanceof Error ? e.message : 'Could not reach it.' });
     } finally {
@@ -163,9 +171,11 @@ function LinkingCard() {
           <p className="field-hint" style={{ margin: 0 }}>
             Linking is on. {linked.length} account{linked.length === 1 ? '' : 's'} connected —
             manage them on the Investments page.
-            {settings.userSecret
-              ? ' A provider credential is stored on this device; it is deliberately excluded from exported backups.'
-              : ' No provider identity yet — connecting a brokerage will create one.'}
+            {settings.mode === 'personal'
+              ? ' Personal mode: the credential lives only in your backend, never on this device or in a backup.'
+              : settings.userSecret
+                ? ' A provider credential is stored on this device; it is deliberately excluded from exported backups.'
+                : ' No provider identity yet — connecting a brokerage will create one.'}
           </p>
         )}
 

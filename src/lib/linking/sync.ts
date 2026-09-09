@@ -94,6 +94,7 @@ export function holdingsFromSnapshot(
     // Expense ratios never come from the provider, so carry over anything the
     // user entered by hand.
     if (prior?.expenseRatioBps !== undefined) holding.expenseRatioBps = prior.expenseRatioBps;
+    if (position.needsReview) holding.needsReview = true;
 
     return holding;
   });
@@ -124,6 +125,11 @@ export interface SyncSummary {
   missing: string[];
   positionCount: number;
   totalValueCents: Cents;
+  /**
+   * Anything the provider could not represent faithfully, prefixed with the
+   * account it came from. Surfaced after every sync rather than logged away.
+   */
+  warnings: string[];
 }
 
 export interface SyncResult {
@@ -156,6 +162,13 @@ export function mergeSnapshots(
     missing: [],
     positionCount: 0,
     totalValueCents: 0,
+    warnings: [],
+  };
+
+  const collectWarnings = (snapshot: RemoteSnapshot): void => {
+    for (const warning of snapshot.warnings ?? []) {
+      summary.warnings.push(`${snapshot.account.name}: ${warning}`);
+    }
   };
 
   const byProviderId = new Map(
@@ -185,6 +198,7 @@ export function mergeSnapshots(
     summary.updated.push(account.name);
     summary.positionCount += snapshot.positions.length;
     summary.totalValueCents += snapshotValue(snapshot);
+    collectWarnings(snapshot);
 
     const { missingSince: _gone, lastError: _err, ...link } = account.link;
 
@@ -209,6 +223,7 @@ export function mergeSnapshots(
     summary.added.push(snapshot.account.name);
     summary.positionCount += snapshot.positions.length;
     summary.totalValueCents += snapshotValue(snapshot);
+    collectWarnings(snapshot);
 
     merged.push({
       id: newId('acct'),
@@ -267,4 +282,13 @@ export function lastSyncedAt(accounts: InvestmentAccount[]): number | null {
     .map((a) => a.link!.lastSyncedAt)
     .filter((t): t is number => t !== null);
   return times.length > 0 ? Math.max(...times) : null;
+}
+
+/** Holdings a sync brought in that the user should check before trusting. */
+export function holdingsNeedingReview(
+  accounts: InvestmentAccount[],
+): { account: InvestmentAccount; holding: Holding }[] {
+  return accounts.flatMap((account) =>
+    account.holdings.filter((h) => h.needsReview).map((holding) => ({ account, holding })),
+  );
 }

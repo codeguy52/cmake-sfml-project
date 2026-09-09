@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useStore } from '../store';
-import { isLinkingConfigured } from '../lib/linking/client';
+import { canSyncWithoutConnecting, isLinkingConfigured } from '../lib/linking/client';
 import { lastSyncedAt, linkedAccounts } from '../lib/linking/sync';
 import type { SyncSummary } from '../lib/linking/sync';
 import { Callout, Card, ConfirmButton, EmptyState, useFormatMoney } from './ui';
@@ -44,6 +44,9 @@ export default function LinkedAccounts({ onNavigate }: { onNavigate: (view: View
   const configured = isLinkingConfigured(settings);
   const linked = linkedAccounts(data.accounts);
   const syncedAt = lastSyncedAt(data.accounts);
+  // In personal mode the backend's key already points at connected brokerages,
+  // so syncing is available before anything has been connected from here.
+  const canSyncNow = canSyncWithoutConnecting(settings) || linked.length > 0;
 
   const runSync = useCallback(async () => {
     setError(null);
@@ -114,14 +117,16 @@ export default function LinkedAccounts({ onNavigate }: { onNavigate: (view: View
       note={
         syncedAt
           ? `Last synced ${relativeTime(syncedAt)}.`
-          : 'Connect an account to pull holdings automatically.'
+          : settings.mode === 'personal'
+            ? 'Personal mode — press Sync to pull the brokerages your API key already has connected.'
+            : 'Connect an account to pull holdings automatically.'
       }
       actions={
         <div className="btn-row">
           <button
             type="button"
             className="btn btn-sm"
-            disabled={syncing || linked.length === 0}
+            disabled={syncing || !canSyncNow}
             onClick={() => void runSync()}
           >
             {syncing ? 'Syncing…' : 'Sync now'}
@@ -160,9 +165,22 @@ export default function LinkedAccounts({ onNavigate }: { onNavigate: (view: View
           </Callout>
         )}
 
+        {result && result.warnings.length > 0 && (
+          <Callout tone="warning">
+            <strong>Some figures need checking:</strong>
+            <ul style={{ margin: '4px 0 0', paddingLeft: 16 }}>
+              {result.warnings.map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          </Callout>
+        )}
+
         {linked.length === 0 ? (
           <EmptyState icon="⇄" title="No brokerages connected">
-            Connect one and its accounts and holdings appear below, refreshed on every sync.
+            {settings.mode === 'personal'
+              ? 'Press Sync now to pull the accounts your SnapTrade key is already connected to.'
+              : 'Connect one and its accounts and holdings appear below, refreshed on every sync.'}
           </EmptyState>
         ) : (
           <div className="table-wrap">

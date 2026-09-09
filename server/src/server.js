@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { ProviderError } from './provider.js';
-import { mockProvider } from './mock.js';
+import { mockPersonalProvider, mockProvider } from './mock.js';
 import { snaptradeProvider } from './snaptrade.js';
 
 /**
@@ -8,12 +8,12 @@ import { snaptradeProvider } from './snaptrade.js';
  *
  * Small on purpose: it holds the aggregator credentials, exposes five
  * endpoints to the app, and stores nothing. No database, no sessions, no user
- * records — the browser keeps its own provider identity and sends it with each
- * call. That means losing this server loses nothing but connectivity, and it
- * can be redeployed anywhere at any time.
+ * records. That means losing this server loses nothing but connectivity, and
+ * it can be redeployed anywhere at any time.
  *
- * Node built-ins only, so `npm install` here is a no-op and it runs on
- * anything with Node 18+.
+ * Its only dependency is the official SnapTrade SDK, which owns the request
+ * signing — see the note at the top of `snaptrade.js` for why that is not
+ * something to hand-roll.
  */
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -28,7 +28,11 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? '')
   .map((o) => o.trim().replace(/\/+$/, ''))
   .filter(Boolean);
 
-const provider = process.env.PROVIDER === 'mock' ? mockProvider : snaptradeProvider;
+const PROVIDERS = {
+  mock: mockProvider,
+  'mock-personal': mockPersonalProvider,
+};
+const provider = PROVIDERS[process.env.PROVIDER ?? ''] ?? snaptradeProvider;
 
 function corsHeaders(origin) {
   const headers = {
@@ -72,7 +76,13 @@ async function readJson(req) {
   }
 }
 
+/**
+ * A personal API key is itself the identity, so no user parameters exist to
+ * validate. Only commercial mode has a user to require.
+ */
 function requireUser(body) {
+  if ((provider.mode ?? 'personal') === 'personal') return {};
+
   const { userId, userSecret } = body;
   if (typeof userId !== 'string' || typeof userSecret !== 'string' || !userId || !userSecret) {
     throw new ProviderError('Missing userId or userSecret.', 400);
@@ -81,7 +91,15 @@ function requireUser(body) {
 }
 
 const routes = {
-  '/api/link/health': async () => ({ ok: true, provider: provider.name }),
+  /**
+   * Health also exercises the credentials, so a wrong key fails here with a
+   * clear message rather than surfacing as an empty sync later.
+   */
+  '/api/link/health': async () => {
+    const mode = provider.mode ?? 'personal';
+    if (typeof provider.check === 'function') await provider.check();
+    return { ok: true, provider: provider.name, mode };
+  },
 
   '/api/link/register': async () => provider.register(),
 
@@ -151,7 +169,10 @@ export const server = createServer(async (req, res) => {
 // Only listen when run directly, so tests can import the server and drive it.
 if (process.argv[1] && process.argv[1].endsWith('server.js')) {
   server.listen(PORT, () => {
-    console.log(`Linking backend on http://localhost:${PORT} (provider: ${provider.name})`);
+    console.log(
+      `Linking backend on http://localhost:${PORT} ` +
+        `(provider: ${provider.name}, mode: ${provider.mode ?? 'personal'})`,
+    );
     if (ALLOWED_ORIGINS.length === 0) {
       console.warn('ALLOWED_ORIGINS is empty — browser requests will be blocked by CORS.');
     }
