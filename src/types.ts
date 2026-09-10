@@ -140,8 +140,19 @@ export interface Holding {
   needsReview?: boolean;
 }
 
-/** Aggregators this app knows how to talk to. */
-export type LinkProvider = 'snaptrade';
+/** Aggregators this app knows how to talk to over the network. */
+export type LinkAggregator = 'snaptrade';
+
+/**
+ * Where an account's holdings come from, when they aren't typed in by hand.
+ *
+ * `file` is a statement or positions export the user dropped in — no account,
+ * no credentials, no network, and it reaches accounts no aggregator covers
+ * (most 401(k) providers among them). It goes through exactly the same merge
+ * rules as a live sync, so the guarantees about what a refresh may overwrite
+ * hold identically for both.
+ */
+export type LinkProvider = LinkAggregator | 'file';
 
 /**
  * Marks an account as owned by a brokerage connection rather than by hand.
@@ -231,7 +242,8 @@ export type LinkAuthMode = 'personal' | 'commercial';
 export interface LinkSettings {
   /** Base URL of the small backend the user deploys. Empty disables linking. */
   backendUrl: string;
-  provider: LinkProvider;
+  /** Only an aggregator can be configured here — file import needs no setup. */
+  provider: LinkAggregator;
   /**
    * Which auth mode the backend reports.
    *

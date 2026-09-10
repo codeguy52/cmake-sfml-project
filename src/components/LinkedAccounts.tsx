@@ -42,8 +42,10 @@ export default function LinkedAccounts({ onNavigate }: { onNavigate: (view: View
 
   const settings = data.settings.linking;
   const configured = isLinkingConfigured(settings);
-  const linked = linkedAccounts(data.accounts);
-  const syncedAt = lastSyncedAt(data.accounts);
+  // Only accounts from the aggregator — imported ones are managed by dropping
+  // in a newer file, and have no connection to disconnect.
+  const linked = linkedAccounts(data.accounts, settings.provider);
+  const syncedAt = lastSyncedAt(data.accounts, settings.provider);
   // In personal mode the backend's key already points at connected brokerages,
   // so syncing is available before anything has been connected from here.
   const canSyncNow = canSyncWithoutConnecting(settings) || linked.length > 0;
@@ -101,7 +103,8 @@ export default function LinkedAccounts({ onNavigate }: { onNavigate: (view: View
           <p style={{ maxWidth: '62ch', margin: '0 auto 12px' }}>
             Connecting a brokerage needs a small backend of your own to hold the aggregator's API
             keys — they can't ship in the app, because anything in the browser is readable by
-            anyone. Until you set one up, add accounts by hand; everything else works the same.
+            anyone. Importing a positions file needs none of that and covers accounts no aggregator
+            reaches, so it's worth trying first.
           </p>
           <button type="button" className="btn btn-primary btn-sm" onClick={() => onNavigate('settings')}>
             Set up linking in Settings

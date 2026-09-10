@@ -39,8 +39,28 @@ path, with or without a photo.
 **Investments.** Accounts by tax treatment (401(k), IRA, Roth, HSA, taxable,
 etc.), holdings with cost basis, allocation by asset class and by account, drift
 from a target mix, blended expense ratio and what it costs you per year, plus
-other assets and debts rolled into net worth. Enter holdings by hand, or link a
-brokerage and have them synced.
+other assets and debts rolled into net worth. Enter holdings by hand, import the
+positions file your brokerage already exports, or link a brokerage and have them
+synced.
+
+**Importing a positions file.** Every brokerage will hand you your holdings as
+CSV, or as OFX/QFX from its "download to Quicken" button — including the 401(k)
+providers no aggregator reaches. Drop the file in and it is read on your device:
+no account, no credentials, no server, nothing sent anywhere.
+
+The parser expects broker exports to be messy, because they are — preamble
+lines above the header, disclaimer footers below it, two tables in one file,
+`n/a` where a number should be, dollar signs and thousands separators, commas
+inside quoted names. Nothing is merged until you have seen what was read: the
+review step shows the accounts, positions and totals it found, along with every
+row it skipped and every figure it could not reconcile. A position whose stated
+value disagrees with its own shares × price is flagged rather than averaged into
+a total — that mismatch is usually an option contract of 100.
+
+Re-importing next month's file updates the same accounts in place. It goes
+through the identical merge rules as a live sync, so a file only ever speaks for
+the accounts inside it: importing one brokerage's export never marks another's
+holdings as missing.
 
 **How to invest.** The widely-taught order of operations — starter emergency
 fund → employer match → expensive debt → full emergency fund → HSA → IRA →
@@ -119,7 +139,9 @@ mode. GitHub Pages is HTTPS, so it gets the full behaviour.
 ## Linking a brokerage
 
 Optional, off by default, and the only feature that sends anything off your
-device.
+device. If you want holdings without any of that, import a positions file
+instead — it needs no backend, no keys and no network, and it covers accounts
+aggregators don't.
 
 Aggregators authenticate with API keys that cannot ship in a web app — anything
 the browser holds is readable by anyone with devtools, and those keys can
@@ -222,6 +244,7 @@ src/
     linking/
       types.ts          Provider-neutral snapshot shape
       client.ts         Talks to your backend; inert until configured
+      importHoldings.ts CSV/OFX/QFX broker exports → the same snapshot shape
       sync.ts           Merge rules — what a sync may and may not overwrite
   components/           Shared UI and the chart layer
   pages/                One file per section
@@ -267,8 +290,13 @@ table view — that's the documented relief, not a nicety.
 - **OCR accuracy varies.** Crisp printing scans well; faded thermal paper,
   creases and bad light do not. The workflow assumes you'll check the total.
 - **Prices only update when you sync.** Without linking, holdings are worth what
-  you last typed. With it, they are worth what the last sync said — there are no
-  live streaming quotes.
+  you last typed or last imported. With it, they are worth what the last sync
+  said — there are no live streaming quotes.
+- **File import is best-effort across brokers.** It was built against the shapes
+  Fidelity, Schwab and Vanguard exports take, plus OFX/QFX, and it is tested
+  against those. A broker that formats things differently may need its columns
+  recognised; the review step exists so you see what was read before it counts
+  toward anything.
 - **The real SnapTrade path has never run against the live API.** It is built on
   the official SDK rather than hand-rolled HTTP, which removes the request
   signing as a source of error, but this repo had no network access to SnapTrade

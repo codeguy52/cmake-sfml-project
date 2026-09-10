@@ -29,6 +29,7 @@ import {
   type SyncSummary,
 } from './lib/linking/sync';
 import { fetchSnapshots } from './lib/linking/client';
+import type { RemoteSnapshot } from './lib/linking/types';
 
 /**
  * Application state.
@@ -120,6 +121,7 @@ export interface StoreState {
   updateLinkSettings: (patch: Partial<LinkSettings>) => void;
   connectBrokerage: (returnUrl: string) => Promise<string>;
   syncLinkedAccounts: () => Promise<SyncSummary>;
+  importSnapshots: (snapshots: RemoteSnapshot[]) => SyncSummary;
   unlinkAccountById: (accountId: string, revokeAtProvider: boolean) => Promise<void>;
   syncing: boolean;
 
@@ -509,6 +511,24 @@ export const useStore = create<StoreState>((set, get) => {
     },
 
     /**
+     * Merge holdings read out of a brokerage's own export file.
+     *
+     * Identical merge rules to a live sync — the file owns holdings and
+     * prices, the person owns contributions, classification and any rename —
+     * with one difference: a file speaks only for the accounts inside it, so
+     * accounts imported from elsewhere are left alone rather than marked as
+     * missing. Synchronous because the parsing already happened; there is no
+     * network here and never will be.
+     */
+    importSnapshots: (snapshots) => {
+      const result = mergeSnapshots(get().data.accounts, snapshots, 'file', Date.now(), {
+        markMissing: false,
+      });
+      mutate((data) => ({ ...data, accounts: result.accounts }));
+      return result.summary;
+    },
+
+    /**
      * Detach an account from its connection. The holdings stay as ordinary
      * manual entries — disconnecting is not a request to delete a portfolio.
      */
@@ -516,7 +536,9 @@ export const useStore = create<StoreState>((set, get) => {
       const account = get().data.accounts.find((a) => a.id === accountId);
       const creds = linkCredentials(get().data.settings.linking);
 
-      if (revokeAtProvider && account?.link && creds) {
+      // An imported account has nothing to revoke — there is no connection
+      // anywhere, only a file that was read once.
+      if (revokeAtProvider && account?.link && account.link.provider !== 'file' && creds) {
         // Revoking can fail (already revoked, provider down); the local
         // unlink should still go through so the user isn't stuck.
         await disconnectAccount(creds, account.link.providerAccountId).catch(() => undefined);
