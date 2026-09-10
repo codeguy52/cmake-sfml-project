@@ -323,6 +323,26 @@ export default function SettingsPage() {
           </div>
         </Card>
 
+        <Card
+          title="Setup"
+          note="The three questions the app asks on a fresh install."
+        >
+          <div className="btn-row">
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => updateSettings({ setupCompletedAt: null })}
+            >
+              Run setup again
+            </button>
+          </div>
+          <p className="field-hint" style={{ margin: '8px 0 0' }}>
+            Re-asks for your take-home pay and savings rate and rescales the budget around them.
+            Categories you have edited keep their proportions, and nothing you have recorded is
+            removed.
+          </p>
+        </Card>
+
         <LinkingCard />
 
         <Card

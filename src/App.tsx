@@ -8,6 +8,7 @@ import InvestmentsPage from './pages/InvestmentsPage';
 import InvestPage from './pages/InvestPage';
 import FIPage from './pages/FIPage';
 import SettingsPage, { applyTheme, readThemePreference } from './pages/SettingsPage';
+import FirstRunSetup from './components/FirstRunSetup';
 
 export type View =
   | 'dashboard'
@@ -40,6 +41,15 @@ export default function App() {
   const { load, loading, error, setError } = useStore();
   const [view, setView] = useState<View>(viewFromHash);
 
+  // Opened from the stored flag, then held open locally: finishing setup flips
+  // the flag, and the last screen — the one offering to add the app to the home
+  // screen — would otherwise vanish the instant it was earned.
+  const needsSetup = useStore((s) => s.data.settings.setupCompletedAt === null);
+  const [setupOpen, setSetupOpen] = useState(false);
+  useEffect(() => {
+    if (!loading && needsSetup) setSetupOpen(true);
+  }, [loading, needsSetup]);
+
   useEffect(() => {
     applyTheme(readThemePreference());
     void load();
@@ -69,6 +79,8 @@ export default function App() {
 
   return (
     <div className="app">
+      {setupOpen && <FirstRunSetup onClose={() => setSetupOpen(false)} />}
+
       <nav className="sidebar" aria-label="Sections">
         <div className="brand">
           <div className="brand-mark" aria-hidden="true">

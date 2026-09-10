@@ -265,6 +265,12 @@ export interface AppSettings {
   locale: string;
   fi: FISettings;
   linking: LinkSettings;
+  /**
+   * When first-run setup was finished or dismissed. Null means it hasn't been,
+   * and the app offers it. A dataset that already has income, spending or
+   * accounts on it counts as set up — nobody gets dropped back into a wizard.
+   */
+  setupCompletedAt: number | null;
   /** Schema version, so an imported backup from an older build can be migrated. */
   schemaVersion: number;
 }

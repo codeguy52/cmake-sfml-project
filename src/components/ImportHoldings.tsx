@@ -109,7 +109,14 @@ export default function ImportHoldings() {
           <input
             ref={fileInput}
             type="file"
-            accept=".csv,.tsv,.txt,.ofx,.qfx,text/csv,text/plain"
+            // Deliberately broad. iOS greys out files whose type it can't
+            // match, and a .qfx arriving through Mail or Files is often typed
+            // as octet-stream — a picker that won't let you pick your own
+            // statement is worse than one that shows too much.
+            accept={
+              '.csv,.tsv,.txt,.ofx,.qfx,text/csv,text/tab-separated-values,text/plain,' +
+              'application/vnd.ms-excel,application/x-ofx,application/octet-stream'
+            }
             style={{ display: 'none' }}
             onChange={(e) => {
               const file = e.target.files?.[0];

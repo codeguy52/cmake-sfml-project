@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import type {
   AppData,
   AppSettings,
+  Bps,
+  Cents,
   Category,
   FISettings,
   Holding,
@@ -30,6 +32,15 @@ import {
 } from './lib/linking/sync';
 import { fetchSnapshots } from './lib/linking/client';
 import type { RemoteSnapshot } from './lib/linking/types';
+import { applySavingsTarget } from './lib/setup';
+
+/** What first-run setup asks for. Every field may be zero — all of it is skippable. */
+export interface SetupChoices {
+  monthlyIncomeCents: Cents;
+  savingsBps: Bps;
+  startingBalanceCents: Cents;
+  monthlyContributionCents: Cents;
+}
 
 /**
  * Application state.
@@ -124,6 +135,10 @@ export interface StoreState {
   importSnapshots: (snapshots: RemoteSnapshot[]) => SyncSummary;
   unlinkAccountById: (accountId: string, revokeAtProvider: boolean) => Promise<void>;
   syncing: boolean;
+
+  // First-run setup
+  completeSetup: (choices: SetupChoices) => void;
+  dismissSetup: () => void;
 
   // Settings & whole-dataset operations
   updateSettings: (patch: Partial<AppSettings>) => void;
@@ -546,6 +561,82 @@ export const useStore = create<StoreState>((set, get) => {
 
       mutate((data) => ({ ...data, accounts: unlinkAccount(data.accounts, accountId) }));
     },
+
+    /**
+     * Apply everything first-run setup collected, in one write.
+     *
+     * One mutation rather than four, so a phone that gets backgrounded halfway
+     * through cannot leave a half-configured budget behind.
+     */
+    completeSetup: ({
+      monthlyIncomeCents,
+      savingsBps,
+      startingBalanceCents,
+      monthlyContributionCents,
+    }) =>
+      mutate((data) => {
+        const incomeSources =
+          data.incomeSources.length > 0
+            ? data.incomeSources.map((source, i) =>
+                i === 0 ? { ...source, monthlyCents: monthlyIncomeCents } : source,
+              )
+            : [
+                {
+                  id: newId('inc'),
+                  name: 'Take-home pay',
+                  kind: 'salary' as const,
+                  monthlyCents: monthlyIncomeCents,
+                },
+              ];
+
+        // Only ever creates the starting account on a first run. Someone
+        // re-running setup already has real accounts, and a second
+        // "Investments" holding a rough total would double-count them.
+        const accounts = [...data.accounts];
+        if (data.accounts.length === 0 && (startingBalanceCents > 0 || monthlyContributionCents > 0)) {
+          accounts.push({
+            id: newId('acct'),
+            name: 'Investments',
+            kind: 'taxable',
+            taxTreatment: 'taxable',
+            monthlyContributionCents,
+            holdings:
+              startingBalanceCents > 0
+                ? [
+                    {
+                      id: newId('hold'),
+                      symbol: '$TOTAL',
+                      name: 'Starting total',
+                      // Unclassified on purpose: a round number someone typed
+                      // is not evidence of what it is invested in, and guessing
+                      // would put a fiction in the allocation chart.
+                      assetClass: 'other' as const,
+                      shares: 1,
+                      priceCents: startingBalanceCents,
+                      // Equal to the balance, so it shows no gain rather than
+                      // claiming the whole balance is profit.
+                      costBasisCents: startingBalanceCents,
+                    },
+                  ]
+                : [],
+          });
+        }
+
+        return {
+          ...data,
+          incomeSources,
+          categories: applySavingsTarget(data.categories, savingsBps),
+          accounts,
+          settings: { ...data.settings, setupCompletedAt: Date.now() },
+        };
+      }),
+
+    /** Leave setup without changing anything, and don't offer it again. */
+    dismissSetup: () =>
+      mutate((data) => ({
+        ...data,
+        settings: { ...data.settings, setupCompletedAt: Date.now() },
+      })),
 
     updateSettings: (patch) =>
       mutate((data) => ({ ...data, settings: { ...data.settings, ...patch } })),

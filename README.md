@@ -118,17 +118,37 @@ and the service worker scopes itself to wherever it's served from, so a
 subdirectory deploy works without configuration — as does any other static host
 (Netlify, Cloudflare Pages, S3) if you'd rather drag `dist/` somewhere.
 
-## Installing it on a phone
+## Setting it up on a phone
 
-Open the deployed URL on the phone, then:
+Open the deployed URL and answer three questions. There is no account to make,
+nothing to install first, and nothing to configure — the whole thing is under a
+minute of typing:
 
-- **iOS / Safari** — Share → Add to Home Screen
-- **Android / Chrome** — the install prompt, or ⋮ → Add to Home screen
+1. **What do you take home each month?** One number, after tax.
+2. **How much of it do you want to keep?** Three starting points — roughly a
+   tenth, a fifth, or a third and up. The budget rescales around whichever you
+   pick, and every category stays editable afterwards.
+3. **Anything saved already?** A rough total and what you add each month, both
+   optional. Enough to make the FI projection real on day one.
+
+Then it offers to put the app on your home screen — a real one-tap install on
+Android, and the two-tap Share → Add to Home Screen on iOS, where Apple gives
+web apps no install API.
+
+Everything after that is optional. You can skip setup entirely and edit the
+starting budget by hand, and Settings → Setup → **Run setup again** re-asks the
+questions later without touching anything you've recorded.
 
 It then launches like an app, without browser chrome. A service worker caches
 the shell and assets, so after the first visit it opens with no network. Receipt
 scanning works offline too, once the first scan has pulled the language model
 into cache.
+
+Adding your holdings is the one step that can't be done in a few taps from
+nothing. The quickest route on a phone is to email yourself your brokerage's
+positions export and import the file — "Importing a positions file" under
+[What it does](#what-it-does) covers it. Typing a rough total during setup
+works too, and the FI numbers are meaningful either way.
 
 **It has to be HTTPS.** Serving the dev server over your LAN
 (`npm run dev -- --host`, then `http://192.168.x.x:5173` on the phone) is fine
@@ -241,6 +261,8 @@ src/
     db.ts               IndexedDB, migrations, storage quota
     backup.ts           JSON/CSV export and import
     palette.ts          Validated categorical palette, series folding
+    setup.ts            First-run choices — savings presets, budget rescaling
+    install.ts          Add-to-home-screen prompt and per-platform steps
     linking/
       types.ts          Provider-neutral snapshot shape
       client.ts         Talks to your backend; inert until configured
