@@ -29,6 +29,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
     userId: null,
     userSecret: null,
     consentedAt: null,
+    // Irrelevant until a backend is configured, and the right default once one
+    // is: a connection nobody refreshes shows stale figures that still look
+    // current, which is worse than having no connection at all.
+    autoSync: true,
   },
   fi: {
     safeWithdrawalRateBps: 400, // the 4% rule

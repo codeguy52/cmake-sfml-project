@@ -78,6 +78,10 @@ export function migrate(data: AppData): AppData {
         ...seeded.settings.linking,
         ...data.settings?.linking,
         mode: data.settings?.linking?.mode ?? seeded.settings.linking.mode,
+        // Automatic refresh arrived after linking did, so an existing linked
+        // install gets the default rather than `undefined`, which would read
+        // as "off" and leave figures quietly ageing.
+        autoSync: data.settings?.linking?.autoSync ?? seeded.settings.linking.autoSync,
       },
       // An install that predates first-run setup has already been set up, by
       // definition — anyone with income, spending or accounts recorded must

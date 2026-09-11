@@ -258,6 +258,13 @@ export interface LinkSettings {
   userSecret: string | null;
   /** When the user accepted that linking sends data off the device. */
   consentedAt: number | null;
+  /**
+   * Refresh on its own, so what's on screen matches the brokerage without
+   * anyone pressing anything. On by default once linking is switched on —
+   * a connected account that silently goes stale is worse than no connection,
+   * because the figures still look current.
+   */
+  autoSync: boolean;
 }
 
 export interface AppSettings {
