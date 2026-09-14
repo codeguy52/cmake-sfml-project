@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useStore } from '../store';
 import { canSyncWithoutConnecting, isLinkingConfigured } from '../lib/linking/client';
 import { lastSyncedAt, linkedAccounts } from '../lib/linking/sync';
+import { isStale } from '../lib/linking/autoSync';
 import type { SyncSummary } from '../lib/linking/sync';
 import { Callout, Card, ConfirmButton, EmptyState, useFormatMoney } from './ui';
 import { accountValue } from '../lib/investments';
@@ -33,7 +34,9 @@ function relativeTime(timestamp: number): string {
 export default function LinkedAccounts({ onNavigate }: { onNavigate: (view: View) => void }) {
   const data = useStore((s) => s.data);
   const syncing = useStore((s) => s.syncing);
-  const { connectBrokerage, syncLinkedAccounts, unlinkAccountById } = useStore();
+  const { connectBrokerage, syncLinkedAccounts, unlinkAccountById, updateLinkSettings } =
+    useStore();
+  const needsReconnect = useStore((s) => s.syncNeedsReconnect);
   const fmt = useFormatMoney();
 
   const [busy, setBusy] = useState(false);
@@ -119,7 +122,7 @@ export default function LinkedAccounts({ onNavigate }: { onNavigate: (view: View
       title="Linked brokerages"
       note={
         syncedAt
-          ? `Last synced ${relativeTime(syncedAt)}.`
+          ? `Updated ${relativeTime(syncedAt)}${settings.autoSync ? ' — refreshing on its own' : ''}.`
           : settings.mode === 'personal'
             ? 'Personal mode — press Sync to pull the brokerages your API key already has connected.'
             : 'Connect an account to pull holdings automatically.'
@@ -146,6 +149,22 @@ export default function LinkedAccounts({ onNavigate }: { onNavigate: (view: View
       }
     >
       <div className="stack-sm">
+        {needsReconnect && (
+          <Callout tone="critical">
+            <strong>This connection needs reconnecting.</strong> The provider rejected the
+            credential, which automatic refreshes can't fix — the figures below are the last ones
+            it returned. Reconnect to bring them up to date.
+          </Callout>
+        )}
+
+        {!needsReconnect && isStale(syncedAt, Date.now()) && (
+          <Callout tone="warning">
+            These figures are {relativeTime(syncedAt!).replace(' ago', '')} old. If your backend is
+            asleep or unreachable, press Sync now — a linked account showing stale numbers is worse
+            than one that says it's stale.
+          </Callout>
+        )}
+
         {error && (
           <Callout tone="critical">
             {error}{' '}
@@ -252,6 +271,19 @@ export default function LinkedAccounts({ onNavigate }: { onNavigate: (view: View
             them, or disconnect to keep the figures as manual entries.
           </Callout>
         )}
+
+        <label className="auto-sync-toggle">
+          <input
+            type="checkbox"
+            checked={settings.autoSync}
+            onChange={(e) => updateLinkSettings({ autoSync: e.target.checked })}
+          />
+          <span>
+            Refresh automatically — on open, when the app comes back to the front, and hourly while
+            it's in use. Brokerages only update positions overnight or intraday, so it doesn't poll
+            harder than that.
+          </span>
+        </label>
 
         <p className="field-hint" style={{ margin: 0 }}>
           Synced accounts have their holdings replaced on every sync. Your contribution amounts,

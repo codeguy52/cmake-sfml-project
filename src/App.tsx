@@ -9,6 +9,7 @@ import InvestPage from './pages/InvestPage';
 import FIPage from './pages/FIPage';
 import SettingsPage, { applyTheme, readThemePreference } from './pages/SettingsPage';
 import FirstRunSetup from './components/FirstRunSetup';
+import { useAutoSync } from './hooks/useAutoSync';
 
 export type View =
   | 'dashboard'
@@ -70,6 +71,10 @@ export default function App() {
     document.addEventListener('visibilitychange', onHide);
     return () => document.removeEventListener('visibilitychange', onHide);
   }, []);
+
+  // Keeps linked accounts current on its own, so what's on screen matches the
+  // brokerage without anyone pressing Sync.
+  useAutoSync();
 
   const navigate = (next: View): void => {
     window.location.hash = `#/${next}`;

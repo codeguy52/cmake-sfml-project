@@ -135,6 +135,12 @@ export interface StoreState {
   importSnapshots: (snapshots: RemoteSnapshot[]) => SyncSummary;
   unlinkAccountById: (accountId: string, revokeAtProvider: boolean) => Promise<void>;
   syncing: boolean;
+  /** Last sync attempt of any kind, for the backoff in `autoSync.ts`. */
+  lastSyncAttemptAt: number | null;
+  /** Failures since the last success. Reset on success. */
+  syncFailures: number;
+  /** Set when the provider says the credential is dead and only the user can fix it. */
+  syncNeedsReconnect: boolean;
 
   // First-run setup
   completeSetup: (choices: SetupChoices) => void;
@@ -178,6 +184,9 @@ export const useStore = create<StoreState>((set, get) => {
     loading: true,
     error: null,
     syncing: false,
+    lastSyncAttemptAt: null,
+    syncFailures: 0,
+    syncNeedsReconnect: false,
 
     load: async () => {
       try {
@@ -507,14 +516,23 @@ export const useStore = create<StoreState>((set, get) => {
       const creds = linkCredentials(get().data.settings.linking);
       if (!creds) throw new Error('Linking is not configured.');
 
-      set({ syncing: true });
+      set({ syncing: true, lastSyncAttemptAt: Date.now() });
       try {
         const snapshots = await fetchSnapshots(creds);
         const result = mergeSnapshots(get().data.accounts, snapshots, creds.provider);
         mutate((data) => ({ ...data, accounts: result.accounts }));
+        set({ syncFailures: 0, syncNeedsReconnect: false });
         return result.summary;
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Sync failed.';
+        // A dead credential is not a transient failure: retrying cannot fix it,
+        // and with an aggregator that bills per call it isn't free to keep
+        // trying. Automatic syncing stops until the user reconnects.
+        const needsReconnect = (error as { needsReconnect?: boolean })?.needsReconnect === true;
+        set((state) => ({
+          syncFailures: state.syncFailures + 1,
+          syncNeedsReconnect: needsReconnect,
+        }));
         mutate((data) => ({
           ...data,
           accounts: markSyncFailure(data.accounts, creds.provider, message),

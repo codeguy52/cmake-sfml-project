@@ -1292,3 +1292,20 @@ input[aria-invalid='true'] {
     flex-direction: column;
   }
 }
+
+/* Settings-style checkbox row that reads as a sentence rather than a form
+   field — the explanation is the label, not a hint underneath it. */
+.auto-sync-toggle {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.auto-sync-toggle input {
+  margin-top: 2px;
+  flex: none;
+}
