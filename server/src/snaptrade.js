@@ -35,50 +35,12 @@ import { ProviderError, toCents } from './provider.js';
  *   carries a userId/userSecret pair.
  *
  * The mode is chosen by `SNAPTRADE_AUTH_MODE`, defaulting to personal.
+ *
+ * The environment is passed in rather than read from `process.env`, because
+ * Cloudflare Workers hand secrets to the request handler instead of exposing a
+ * process global, and because a provider you can construct with a given
+ * environment is one you can test.
  */
-
-let clientCache = null;
-
-function requireEnv(name) {
-  const value = process.env[name];
-  if (!value) {
-    throw new ProviderError(
-      `${name} is not set. Add it to the backend's environment before syncing.`,
-      500,
-    );
-  }
-  return value;
-}
-
-export function authMode() {
-  return process.env.SNAPTRADE_AUTH_MODE === 'commercial' ? 'commercial' : 'personal';
-}
-
-function client() {
-  if (clientCache) return clientCache;
-
-  const params = {
-    clientId: requireEnv('SNAPTRADE_CLIENT_ID'),
-    consumerKey: requireEnv('SNAPTRADE_CONSUMER_KEY'),
-  };
-
-  clientCache = new Snaptrade({
-    auth:
-      authMode() === 'commercial'
-        ? SnaptradeAuth.commercialApiKey(params)
-        : SnaptradeAuth.personalApiKey(params),
-  });
-  return clientCache;
-}
-
-/** In personal mode the key is the identity, so user params must be omitted. */
-function userParams(user) {
-  if (authMode() === 'personal') return {};
-  if (!user?.userId || !user?.userSecret) {
-    throw new ProviderError('This backend is in commercial mode and needs a registered user.', 400);
-  }
-  return { userId: user.userId, userSecret: user.userSecret };
-}
 
 /** Turn an SDK/axios failure into something the app can act on. */
 function wrap(error, context) {
@@ -221,130 +183,181 @@ function mapCash(balances, baseCurrency) {
   return { cashCents, warnings };
 }
 
-/** @type {import('./provider.js').Provider} */
-export const snaptradeProvider = {
-  name: 'snaptrade',
+/**
+ * Build a provider bound to one environment.
+ *
+ * @param {Record<string, string|undefined>} env
+ */
+export function createSnaptradeProvider(env = globalThis.process?.env ?? {}) {
+  let clientCache = null;
 
-  get mode() {
-    return authMode();
-  },
-
-  async check() {
-    try {
-      // Exercises the credentials and the signing path in one cheap call, so
-      // "Test connection" in the app fails loudly here rather than at sync.
-      await client().apiStatus.check();
-      return true;
-    } catch (error) {
-      throw wrap(error, 'SnapTrade status check failed');
-    }
-  },
-
-  async register() {
-    if (authMode() === 'personal') {
-      // Nothing to register: the personal key already identifies the user.
-      // A sentinel keeps the app's flow identical across both modes.
-      return { userId: 'personal', userSecret: 'personal' };
-    }
-    try {
-      const userId = `ember-${crypto.randomUUID()}`;
-      const { data } = await client().authentication.registerSnapTradeUser({ userId });
-      return { userId: String(data.userId ?? userId), userSecret: String(data.userSecret) };
-    } catch (error) {
-      throw wrap(error, 'Could not register a SnapTrade user');
-    }
-  },
-
-  async portal(user, returnUrl) {
-    try {
-      const { data } = await client().authentication.loginSnapTradeUser({
-        ...userParams(user),
-        customRedirect: returnUrl,
-        connectionType: 'read',
-      });
-      const redirectUri = first(data, 'redirectURI');
-      if (!redirectUri) {
-        throw new ProviderError('SnapTrade did not return a connection URL.', 502);
-      }
-      return { redirectUri: String(redirectUri) };
-    } catch (error) {
-      throw wrap(error, 'Could not open the connection portal');
-    }
-  },
-
-  async holdings(user) {
-    const params = userParams(user);
-    let accounts;
-    try {
-      const response = await client().accountInformation.listUserAccounts(params);
-      accounts = response.data;
-    } catch (error) {
-      throw wrap(error, 'Could not list accounts');
-    }
-    if (!Array.isArray(accounts)) return [];
-
-    const snapshots = [];
-    for (const rawAccount of accounts) {
-      const account = mapAccount(rawAccount);
-
-      let holdings;
-      try {
-        // One call returns the account, its balances and its positions —
-        // where the previous implementation made three.
-        const response = await client().accountInformation.getUserHoldings({
-          ...params,
-          accountId: account.id,
-        });
-        holdings = response.data;
-      } catch (error) {
-        throw wrap(error, `Could not read holdings for ${account.name}`);
-      }
-
-      const positions = [
-        ...(Array.isArray(holdings?.positions) ? holdings.positions.map(mapPosition) : []),
-        ...(Array.isArray(holdings?.option_positions)
-          ? holdings.option_positions.map(mapOptionPosition)
-          : []),
-      ];
-
-      const { cashCents, warnings } = mapCash(holdings?.balances, account.currency);
-      const optionCount = positions.filter((p) => p.needsReview).length;
-      if (optionCount > 0) {
-        warnings.push(
-          `${optionCount} option position${optionCount === 1 ? '' : 's'} imported — check the ` +
-            'value, since option prices may or may not already include the 100x contract ' +
-            'multiplier.',
-        );
-      }
-
-      snapshots.push({
-        account,
-        positions,
-        ...(cashCents !== 0 ? { cashCents } : {}),
-        ...(warnings.length > 0 ? { warnings } : {}),
-      });
-    }
-
-    return snapshots;
-  },
-
-  async disconnect(user, providerAccountId) {
-    const params = userParams(user);
-    try {
-      const { data: accounts } = await client().accountInformation.listUserAccounts(params);
-      const match = (Array.isArray(accounts) ? accounts : []).find(
-        (a) => String(first(a, 'id')) === providerAccountId,
+  function requireEnv(name) {
+    const value = env[name];
+    if (!value) {
+      throw new ProviderError(
+        `${name} is not set. Add it to the backend's environment before syncing.`,
+        500,
       );
+    }
+    return value;
+  }
 
-      // Connections are what get revoked; an account belongs to exactly one.
-      const connectionId = match ? first(match, 'brokerage_authorization') : undefined;
-      if (!connectionId) {
-        throw new ProviderError('Could not find the connection for that account.', 404);
+  const authMode = () => (env.SNAPTRADE_AUTH_MODE === 'commercial' ? 'commercial' : 'personal');
+
+  function client() {
+    if (clientCache) return clientCache;
+
+    const params = {
+      clientId: requireEnv('SNAPTRADE_CLIENT_ID'),
+      consumerKey: requireEnv('SNAPTRADE_CONSUMER_KEY'),
+    };
+
+    clientCache = new Snaptrade({
+      auth:
+        authMode() === 'commercial'
+          ? SnaptradeAuth.commercialApiKey(params)
+          : SnaptradeAuth.personalApiKey(params),
+    });
+    return clientCache;
+  }
+
+  /** In personal mode the key is the identity, so user params must be omitted. */
+  function userParams(user) {
+    if (authMode() === 'personal') return {};
+    if (!user?.userId || !user?.userSecret) {
+      throw new ProviderError(
+        'This backend is in commercial mode and needs a registered user.',
+        400,
+      );
+    }
+    return { userId: user.userId, userSecret: user.userSecret };
+  }
+
+  /** @type {import('./provider.js').Provider} */
+  return {
+    name: 'snaptrade',
+
+    get mode() {
+      return authMode();
+    },
+
+    async check() {
+      try {
+        // Exercises the credentials and the signing path in one cheap call, so
+        // "Test connection" in the app fails loudly here rather than at sync.
+        await client().apiStatus.check();
+        return true;
+      } catch (error) {
+        throw wrap(error, 'SnapTrade status check failed');
+      }
+    },
+
+    async register() {
+      if (authMode() === 'personal') {
+        // Nothing to register: the personal key already identifies the user.
+        // A sentinel keeps the app's flow identical across both modes.
+        return { userId: 'personal', userSecret: 'personal' };
+      }
+      try {
+        const userId = `ember-${crypto.randomUUID()}`;
+        const { data } = await client().authentication.registerSnapTradeUser({ userId });
+        return { userId: String(data.userId ?? userId), userSecret: String(data.userSecret) };
+      } catch (error) {
+        throw wrap(error, 'Could not register a SnapTrade user');
+      }
+    },
+
+    async portal(user, returnUrl) {
+      try {
+        const { data } = await client().authentication.loginSnapTradeUser({
+          ...userParams(user),
+          customRedirect: returnUrl,
+          connectionType: 'read',
+        });
+        const redirectUri = first(data, 'redirectURI');
+        if (!redirectUri) {
+          throw new ProviderError('SnapTrade did not return a connection URL.', 502);
+        }
+        return { redirectUri: String(redirectUri) };
+      } catch (error) {
+        throw wrap(error, 'Could not open the connection portal');
+      }
+    },
+
+    async holdings(user) {
+      const params = userParams(user);
+      let accounts;
+      try {
+        const response = await client().accountInformation.listUserAccounts(params);
+        accounts = response.data;
+      } catch (error) {
+        throw wrap(error, 'Could not list accounts');
+      }
+      if (!Array.isArray(accounts)) return [];
+
+      const snapshots = [];
+      for (const rawAccount of accounts) {
+        const account = mapAccount(rawAccount);
+
+        let holdings;
+        try {
+          // One call returns the account, its balances and its positions —
+          // where the previous implementation made three.
+          const response = await client().accountInformation.getUserHoldings({
+            ...params,
+            accountId: account.id,
+          });
+          holdings = response.data;
+        } catch (error) {
+          throw wrap(error, `Could not read holdings for ${account.name}`);
+        }
+
+        const positions = [
+          ...(Array.isArray(holdings?.positions) ? holdings.positions.map(mapPosition) : []),
+          ...(Array.isArray(holdings?.option_positions)
+            ? holdings.option_positions.map(mapOptionPosition)
+            : []),
+        ];
+
+        const { cashCents, warnings } = mapCash(holdings?.balances, account.currency);
+        const optionCount = positions.filter((p) => p.needsReview).length;
+        if (optionCount > 0) {
+          warnings.push(
+            `${optionCount} option position${optionCount === 1 ? '' : 's'} imported — check the ` +
+              'value, since option prices may or may not already include the 100x contract ' +
+              'multiplier.',
+          );
+        }
+
+        snapshots.push({
+          account,
+          positions,
+          ...(cashCents !== 0 ? { cashCents } : {}),
+          ...(warnings.length > 0 ? { warnings } : {}),
+        });
       }
 
-      await client().connections.deleteConnection({ ...params, connectionId: String(connectionId) });
-    } catch (error) {
-      throw wrap(error, 'Could not disconnect the account');
-    }
-  },
-};
+      return snapshots;
+    },
+
+    async disconnect(user, providerAccountId) {
+      const params = userParams(user);
+      try {
+        const { data: accounts } = await client().accountInformation.listUserAccounts(params);
+        const match = (Array.isArray(accounts) ? accounts : []).find(
+          (a) => String(first(a, 'id')) === providerAccountId,
+        );
+
+        // Connections are what get revoked; an account belongs to exactly one.
+        const connectionId = match ? first(match, 'brokerage_authorization') : undefined;
+        if (!connectionId) {
+          throw new ProviderError('Could not find the connection for that account.', 404);
+        }
+
+        await client().connections.deleteConnection({ ...params, connectionId: String(connectionId) });
+      } catch (error) {
+        throw wrap(error, 'Could not disconnect the account');
+      }
+    },
+  };
+}

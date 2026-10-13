@@ -145,6 +145,19 @@ function snapshotValue(snapshot: RemoteSnapshot): Cents {
   return positions + (snapshot.cashCents ?? 0);
 }
 
+export interface MergeOptions {
+  /**
+   * Whether this batch speaks for every account the provider has.
+   *
+   * A live sync does: anything it stops returning is genuinely gone, and
+   * saying so is the point. A dropped-in file does not — it holds one
+   * brokerage's positions on one day, and marking every other imported
+   * account as missing because it wasn't in this particular export would be
+   * a lie about the data.
+   */
+  markMissing?: boolean;
+}
+
 /**
  * Fold a set of provider snapshots into the existing account list.
  *
@@ -155,6 +168,7 @@ export function mergeSnapshots(
   snapshots: RemoteSnapshot[],
   provider: LinkProvider,
   now: number = Date.now(),
+  { markMissing = true }: MergeOptions = {},
 ): SyncResult {
   const summary: SyncSummary = {
     added: [],
@@ -184,6 +198,10 @@ export function mergeSnapshots(
 
     const snapshot = snapshots.find((s) => s.account.id === account.link!.providerAccountId);
     if (!snapshot) {
+      // This batch isn't authoritative, so absence says nothing. Leave the
+      // account exactly as it was, unmentioned.
+      if (!markMissing) return account;
+
       // Still missing — leave the existing marker alone so the UI can say how
       // long it has been gone.
       if (account.link.missingSince !== undefined) {
@@ -272,13 +290,28 @@ export function unlinkAccount(
   });
 }
 
-export function linkedAccounts(accounts: InvestmentAccount[]): InvestmentAccount[] {
-  return accounts.filter((a) => a.link !== undefined);
+/**
+ * Accounts backed by a connection or an import.
+ *
+ * `provider` narrows it, because the two are managed in different places: a
+ * live connection is disconnected at the aggregator, while an imported account
+ * is only ever refreshed by dropping in a newer file.
+ */
+export function linkedAccounts(
+  accounts: InvestmentAccount[],
+  provider?: LinkProvider,
+): InvestmentAccount[] {
+  return accounts.filter(
+    (a) => a.link !== undefined && (provider === undefined || a.link.provider === provider),
+  );
 }
 
 /** Most recent successful sync across all linked accounts, or null. */
-export function lastSyncedAt(accounts: InvestmentAccount[]): number | null {
-  const times = linkedAccounts(accounts)
+export function lastSyncedAt(
+  accounts: InvestmentAccount[],
+  provider?: LinkProvider,
+): number | null {
+  const times = linkedAccounts(accounts, provider)
     .map((a) => a.link!.lastSyncedAt)
     .filter((t): t is number => t !== null);
   return times.length > 0 ? Math.max(...times) : null;

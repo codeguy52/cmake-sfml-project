@@ -39,8 +39,28 @@ path, with or without a photo.
 **Investments.** Accounts by tax treatment (401(k), IRA, Roth, HSA, taxable,
 etc.), holdings with cost basis, allocation by asset class and by account, drift
 from a target mix, blended expense ratio and what it costs you per year, plus
-other assets and debts rolled into net worth. Enter holdings by hand, or link a
-brokerage and have them synced.
+other assets and debts rolled into net worth. Enter holdings by hand, import the
+positions file your brokerage already exports, or link a brokerage and have them
+synced.
+
+**Importing a positions file.** Every brokerage will hand you your holdings as
+CSV, or as OFX/QFX from its "download to Quicken" button — including the 401(k)
+providers no aggregator reaches. Drop the file in and it is read on your device:
+no account, no credentials, no server, nothing sent anywhere.
+
+The parser expects broker exports to be messy, because they are — preamble
+lines above the header, disclaimer footers below it, two tables in one file,
+`n/a` where a number should be, dollar signs and thousands separators, commas
+inside quoted names. Nothing is merged until you have seen what was read: the
+review step shows the accounts, positions and totals it found, along with every
+row it skipped and every figure it could not reconcile. A position whose stated
+value disagrees with its own shares × price is flagged rather than averaged into
+a total — that mismatch is usually an option contract of 100.
+
+Re-importing next month's file updates the same accounts in place. It goes
+through the identical merge rules as a live sync, so a file only ever speaks for
+the accounts inside it: importing one brokerage's export never marks another's
+holdings as missing.
 
 **How to invest.** The widely-taught order of operations — starter emergency
 fund → employer match → expensive debt → full emergency fund → HSA → IRA →
@@ -98,17 +118,37 @@ and the service worker scopes itself to wherever it's served from, so a
 subdirectory deploy works without configuration — as does any other static host
 (Netlify, Cloudflare Pages, S3) if you'd rather drag `dist/` somewhere.
 
-## Installing it on a phone
+## Setting it up on a phone
 
-Open the deployed URL on the phone, then:
+Open the deployed URL and answer three questions. There is no account to make,
+nothing to install first, and nothing to configure — the whole thing is under a
+minute of typing:
 
-- **iOS / Safari** — Share → Add to Home Screen
-- **Android / Chrome** — the install prompt, or ⋮ → Add to Home screen
+1. **What do you take home each month?** One number, after tax.
+2. **How much of it do you want to keep?** Three starting points — roughly a
+   tenth, a fifth, or a third and up. The budget rescales around whichever you
+   pick, and every category stays editable afterwards.
+3. **Anything saved already?** A rough total and what you add each month, both
+   optional. Enough to make the FI projection real on day one.
+
+Then it offers to put the app on your home screen — a real one-tap install on
+Android, and the two-tap Share → Add to Home Screen on iOS, where Apple gives
+web apps no install API.
+
+Everything after that is optional. You can skip setup entirely and edit the
+starting budget by hand, and Settings → Setup → **Run setup again** re-asks the
+questions later without touching anything you've recorded.
 
 It then launches like an app, without browser chrome. A service worker caches
 the shell and assets, so after the first visit it opens with no network. Receipt
 scanning works offline too, once the first scan has pulled the language model
 into cache.
+
+Adding your holdings is the one step that can't be done in a few taps from
+nothing. The quickest route on a phone is to email yourself your brokerage's
+positions export and import the file — "Importing a positions file" under
+[What it does](#what-it-does) covers it. Typing a rough total during setup
+works too, and the FI numbers are meaningful either way.
 
 **It has to be HTTPS.** Serving the dev server over your LAN
 (`npm run dev -- --host`, then `http://192.168.x.x:5173` on the phone) is fine
@@ -119,7 +159,9 @@ mode. GitHub Pages is HTTPS, so it gets the full behaviour.
 ## Linking a brokerage
 
 Optional, off by default, and the only feature that sends anything off your
-device.
+device. If you want holdings without any of that, import a positions file
+instead — it needs no backend, no keys and no network, and it covers accounts
+aggregators don't.
 
 Aggregators authenticate with API keys that cannot ship in a web app — anything
 the browser holds is readable by anyone with devtools, and those keys can
@@ -136,8 +178,15 @@ Then **Settings → Link a brokerage** → `http://localhost:8787` → **Test
 connection** → **I understand — enable linking**. The mock lets you exercise the
 whole flow with no SnapTrade account.
 
+Its routing is a plain `Request → Response` function, so the same backend runs
+on your machine during development and on Cloudflare Workers or Deno Deploy in
+production — both free tiers that stay awake, which matters because a sleeping
+host makes the first sync of the day look like a failure. A Node host (Render,
+Railway, Fly.io, a VPS) works unchanged.
+
 For real accounts, see [`server/README.md`](server/README.md). Two API keys go
-into your host's environment; nothing is stored on your device.
+into your host's secret store; nothing is stored on your device, and they never
+belong in this repo.
 
 ### Personal vs commercial mode
 
@@ -212,13 +261,19 @@ src/
     db.ts               IndexedDB, migrations, storage quota
     backup.ts           JSON/CSV export and import
     palette.ts          Validated categorical palette, series folding
+    setup.ts            First-run choices — savings presets, budget rescaling
+    install.ts          Add-to-home-screen prompt and per-platform steps
     linking/
       types.ts          Provider-neutral snapshot shape
       client.ts         Talks to your backend; inert until configured
+      importHoldings.ts CSV/OFX/QFX broker exports → the same snapshot shape
       sync.ts           Merge rules — what a sync may and may not overwrite
   components/           Shared UI and the chart layer
   pages/                One file per section
 server/                 Optional linking backend (see server/README.md)
+  src/app.js            Routing, as a Request -> Response function
+  src/server.js         Node entry
+  src/worker.js         Cloudflare Workers / Deno Deploy entry
 scripts/
   vendor-ocr-assets.mjs Copies the OCR runtime into public/
 ```
@@ -257,8 +312,13 @@ table view — that's the documented relief, not a nicety.
 - **OCR accuracy varies.** Crisp printing scans well; faded thermal paper,
   creases and bad light do not. The workflow assumes you'll check the total.
 - **Prices only update when you sync.** Without linking, holdings are worth what
-  you last typed. With it, they are worth what the last sync said — there are no
-  live streaming quotes.
+  you last typed or last imported. With it, they are worth what the last sync
+  said — there are no live streaming quotes.
+- **File import is best-effort across brokers.** It was built against the shapes
+  Fidelity, Schwab and Vanguard exports take, plus OFX/QFX, and it is tested
+  against those. A broker that formats things differently may need its columns
+  recognised; the review step exists so you see what was read before it counts
+  toward anything.
 - **The real SnapTrade path has never run against the live API.** It is built on
   the official SDK rather than hand-rolled HTTP, which removes the request
   signing as a source of error, but this repo had no network access to SnapTrade

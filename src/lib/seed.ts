@@ -17,6 +17,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   currency: 'USD',
   locale: 'en-US',
   schemaVersion: SCHEMA_VERSION,
+  // A fresh install has not been through setup; an upgrade of an existing one
+  // is marked complete during migration.
+  setupCompletedAt: null,
   // Linking is off by default: with no backend URL the app makes no network
   // requests at all, which is the behaviour every other feature assumes.
   linking: {
@@ -26,6 +29,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
     userId: null,
     userSecret: null,
     consentedAt: null,
+    // Irrelevant until a backend is configured, and the right default once one
+    // is: a connection nobody refreshes shows stale figures that still look
+    // current, which is worse than having no connection at all.
+    autoSync: true,
   },
   fi: {
     safeWithdrawalRateBps: 400, // the 4% rule

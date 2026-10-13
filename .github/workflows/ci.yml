@@ -31,13 +31,20 @@ jobs:
       - name: Build
         run: npm run build
 
-      # The linking backend is real code that the app build never touches, so
-      # boot it against the mock provider and check it answers. Catches a
-      # syntax error or a broken import before a deploy does.
-      - name: Smoke-test the linking backend
+      # The linking backend is real code that the app build never touches. Its
+      # routing is a plain Request -> Response function, so most of it is
+      # covered without a port at all.
+      - name: Test the linking backend
         working-directory: server
         run: |
           npm ci
+          npm test
+
+      # Then boot it for real, which is the only way to exercise the node:http
+      # adapter the tests deliberately bypass.
+      - name: Smoke-test the linking backend over HTTP
+        working-directory: server
+        run: |
           PROVIDER=mock-personal ALLOWED_ORIGINS=http://localhost node src/server.js &
           for i in $(seq 1 20); do
             sleep 0.5

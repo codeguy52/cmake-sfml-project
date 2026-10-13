@@ -1,179 +1,94 @@
 import { createServer } from 'node:http';
-import { ProviderError } from './provider.js';
-import { mockPersonalProvider, mockProvider } from './mock.js';
-import { snaptradeProvider } from './snaptrade.js';
+import { createApp } from './app.js';
 
 /**
- * The linking backend.
+ * Node entry point.
  *
- * Small on purpose: it holds the aggregator credentials, exposes five
- * endpoints to the app, and stores nothing. No database, no sessions, no user
- * records. That means losing this server loses nothing but connectivity, and
- * it can be redeployed anywhere at any time.
- *
- * Its only dependency is the official SnapTrade SDK, which owns the request
- * signing — see the note at the top of `snaptrade.js` for why that is not
- * something to hand-roll.
+ * All the routing lives in `app.js` as a plain `Request -> Response` function;
+ * this file only translates between that and `node:http`, so the same backend
+ * runs unchanged here, on Deno Deploy and on Cloudflare Workers (see
+ * `worker.js`). Nothing about the linking logic is Node-specific.
  */
 
-const PORT = Number(process.env.PORT ?? 8787);
+const MAX_BODY_BYTES = 64 * 1024;
+
+const app = createApp(process.env);
 
 /**
- * Browsers block a page from calling an origin that hasn't opted in, so the
- * app's origin must be listed explicitly. A wildcard would let any site on the
- * internet drive this backend using a stolen userSecret.
+ * Read the body with a hard ceiling. A linking request is a few hundred bytes,
+ * and buffering an unbounded upload just to hand it to the app would give away
+ * the limit the app is trying to enforce.
  */
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? '')
-  .split(',')
-  .map((o) => o.trim().replace(/\/+$/, ''))
-  .filter(Boolean);
-
-const PROVIDERS = {
-  mock: mockProvider,
-  'mock-personal': mockPersonalProvider,
-};
-const provider = PROVIDERS[process.env.PROVIDER ?? ''] ?? snaptradeProvider;
-
-function corsHeaders(origin) {
-  const headers = {
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Max-Age': '86400',
-    Vary: 'Origin',
-  };
-  const normalized = (origin ?? '').replace(/\/+$/, '');
-  if (normalized && ALLOWED_ORIGINS.includes(normalized)) {
-    headers['Access-Control-Allow-Origin'] = origin;
-  }
-  return headers;
-}
-
-function send(res, status, body, origin) {
-  const payload = JSON.stringify(body);
-  res.writeHead(status, {
-    'Content-Type': 'application/json',
-    'Content-Length': Buffer.byteLength(payload),
-    ...corsHeaders(origin),
-  });
-  res.end(payload);
-}
-
-async function readJson(req) {
+async function readBody(req) {
   const chunks = [];
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    // A linking request is a few hundred bytes; anything larger is a mistake
-    // or an attempt to exhaust memory.
-    if (size > 64 * 1024) throw new ProviderError('Request body too large.', 413);
+    if (size > MAX_BODY_BYTES) return null;
     chunks.push(chunk);
   }
-  if (chunks.length === 0) return {};
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  } catch {
-    throw new ProviderError('Request body was not valid JSON.', 400);
-  }
+  return Buffer.concat(chunks);
 }
 
-/**
- * A personal API key is itself the identity, so no user parameters exist to
- * validate. Only commercial mode has a user to require.
- */
-function requireUser(body) {
-  if ((provider.mode ?? 'personal') === 'personal') return {};
+function toRequest(req, body) {
+  // The URL is only used for its path; the host is whatever proxied us.
+  const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
 
-  const { userId, userSecret } = body;
-  if (typeof userId !== 'string' || typeof userSecret !== 'string' || !userId || !userSecret) {
-    throw new ProviderError('Missing userId or userSecret.', 400);
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(req.headers)) {
+    if (value === undefined) continue;
+    for (const item of Array.isArray(value) ? value : [value]) headers.append(name, item);
   }
-  return { userId, userSecret };
+
+  const method = req.method ?? 'GET';
+  const hasBody = body !== null && body.length > 0 && method !== 'GET' && method !== 'HEAD';
+  return new Request(url, { method, headers, ...(hasBody ? { body } : {}) });
 }
 
-const routes = {
-  /**
-   * Health also exercises the credentials, so a wrong key fails here with a
-   * clear message rather than surfacing as an empty sync later.
-   */
-  '/api/link/health': async () => {
-    const mode = provider.mode ?? 'personal';
-    if (typeof provider.check === 'function') await provider.check();
-    return { ok: true, provider: provider.name, mode };
-  },
+async function send(res, response) {
+  const headers = Object.fromEntries(response.headers);
+  const body = Buffer.from(await response.arrayBuffer());
 
-  '/api/link/register': async () => provider.register(),
-
-  '/api/link/portal': async (body) => {
-    const user = requireUser(body);
-    if (typeof body.returnUrl !== 'string' || !/^https?:\/\//.test(body.returnUrl)) {
-      throw new ProviderError('A valid returnUrl is required.', 400);
-    }
-    // Only ever send the user back to an origin we recognise — an open
-    // redirect here would be a phishing vector wearing your app's name.
-    const origin = new URL(body.returnUrl).origin.replace(/\/+$/, '');
-    if (ALLOWED_ORIGINS.length > 0 && !ALLOWED_ORIGINS.includes(origin)) {
-      throw new ProviderError('returnUrl is not an allowed origin.', 400);
-    }
-    return provider.portal(user, body.returnUrl);
-  },
-
-  '/api/link/holdings': async (body) => {
-    const user = requireUser(body);
-    return { snapshots: await provider.holdings(user) };
-  },
-
-  '/api/link/disconnect': async (body) => {
-    const user = requireUser(body);
-    if (typeof body.providerAccountId !== 'string' || !body.providerAccountId) {
-      throw new ProviderError('providerAccountId is required.', 400);
-    }
-    await provider.disconnect(user, body.providerAccountId);
-    return { ok: true };
-  },
-};
-
-export const server = createServer(async (req, res) => {
-  const origin = req.headers.origin;
-  const path = new URL(req.url ?? '/', 'http://localhost').pathname;
-
-  if (req.method === 'OPTIONS') {
-    res.writeHead(204, corsHeaders(origin));
+  if (body.length === 0) {
+    // 204 must not carry a Content-Length, and there is nothing to write.
+    res.writeHead(response.status, headers);
     res.end();
     return;
   }
 
-  const handler = routes[path];
-  if (!handler) return send(res, 404, { error: 'Not found.' }, origin);
-  if (req.method !== 'POST') return send(res, 405, { error: 'Use POST.' }, origin);
+  res.writeHead(response.status, { ...headers, 'Content-Length': body.length });
+  res.end(body);
+}
 
+export const server = createServer(async (req, res) => {
   try {
-    const body = await readJson(req);
-    send(res, 200, await handler(body), origin);
+    const body = await readBody(req);
+    if (body === null) {
+      res.writeHead(413, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Request body too large.' }));
+      return;
+    }
+    await send(res, await app.handle(toRequest(req, body)));
   } catch (error) {
-    const status = error instanceof ProviderError ? error.status : 500;
-    // Log server-side, return something safe: upstream errors can carry
-    // fragments of credentials or account identifiers.
-    console.error(`${path} failed:`, error.message);
-    send(
-      res,
-      status,
-      {
-        error: error instanceof ProviderError ? error.message : 'Internal error.',
-        ...(error?.needsReconnect ? { needsReconnect: true } : {}),
-      },
-      origin,
-    );
+    // Anything reaching here is a bug in the adapter itself — the app maps its
+    // own errors. Say nothing useful to the caller; log it for the operator.
+    console.error('Request failed before reaching the app:', error?.message);
+    if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Internal error.' }));
   }
 });
 
 // Only listen when run directly, so tests can import the server and drive it.
 if (process.argv[1] && process.argv[1].endsWith('server.js')) {
-  server.listen(PORT, () => {
+  const port = Number(process.env.PORT ?? 8787);
+  const { provider, allowedOrigins } = app.config;
+
+  server.listen(port, () => {
     console.log(
-      `Linking backend on http://localhost:${PORT} ` +
+      `Linking backend on http://localhost:${port} ` +
         `(provider: ${provider.name}, mode: ${provider.mode ?? 'personal'})`,
     );
-    if (ALLOWED_ORIGINS.length === 0) {
+    if (allowedOrigins.length === 0) {
       console.warn('ALLOWED_ORIGINS is empty — browser requests will be blocked by CORS.');
     }
   });

@@ -26,6 +26,7 @@ import {
 } from '../components/ui';
 import { DriftChart, MoneyTable, NetWorthBars, ShareTable, StackedShareBar } from '../components/charts';
 import LinkedAccounts from '../components/LinkedAccounts';
+import ImportHoldings from '../components/ImportHoldings';
 import type { View } from '../App';
 
 const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
@@ -423,8 +424,9 @@ export default function InvestmentsPage({ onNavigate }: { onNavigate: (view: Vie
       <header className="page-header">
         <h1 className="page-title">Investments</h1>
         <p className="page-subtitle">
-          Accounts, holdings and net worth. Enter holdings by hand, or link a brokerage and have
-          them synced. Either way prices update only when you do — there are no live quotes.
+          Accounts, holdings and net worth. Enter holdings by hand, import your brokerage's own
+          positions export, or link a brokerage and have them synced. Either way prices update only
+          when you do — there are no live quotes.
         </p>
       </header>
 
@@ -457,6 +459,8 @@ export default function InvestmentsPage({ onNavigate }: { onNavigate: (view: Vie
       </div>
 
       <div className="stack">
+        <ImportHoldings />
+
         <LinkedAccounts onNavigate={onNavigate} />
 
         {portfolio.blendedExpenseRatioBps > 0 && (

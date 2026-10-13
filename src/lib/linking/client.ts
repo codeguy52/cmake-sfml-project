@@ -19,7 +19,19 @@ import type {
  * default install still makes zero network requests.
  */
 
-const REQUEST_TIMEOUT_MS = 30_000;
+/**
+ * Generous on purpose. A free-tier host that sleeps when idle takes tens of
+ * seconds to wake, and the first request after a quiet day pays that whole
+ * cost. Thirty seconds looked like plenty until it turned an ordinary cold
+ * start into "your backend is broken".
+ */
+const REQUEST_TIMEOUT_MS = 60_000;
+
+/**
+ * A sync reads every account and then its holdings one account at a time, so
+ * it is the one call whose duration grows with how much you own.
+ */
+const SYNC_TIMEOUT_MS = 120_000;
 
 function linkError(message: string, status?: number, needsReconnect = false): LinkError {
   const error = new Error(message) as LinkError;
@@ -64,9 +76,14 @@ export function canSyncWithoutConnecting(settings: LinkSettings): boolean {
   return isLinkingConfigured(settings) && settings.mode === 'personal';
 }
 
-async function post<T>(baseUrl: string, path: string, body: unknown): Promise<T> {
+async function post<T>(
+  baseUrl: string,
+  path: string,
+  body: unknown,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<T> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   let response: Response;
   try {
@@ -81,7 +98,11 @@ async function post<T>(baseUrl: string, path: string, body: unknown): Promise<T>
     // because "your backend is down" and "this took too long" need different
     // reactions from the user.
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw linkError('The request timed out. Check that your backend is running.');
+      throw linkError(
+        `The request timed out after ${Math.round(timeoutMs / 1000)}s. If your backend is on a ` +
+          'free tier that sleeps when idle, the first request wakes it — try once more, and it ' +
+          'should be quick this time.',
+      );
     }
     throw linkError(
       'Could not reach your linking backend. Check the URL in Settings and that it is deployed.',
@@ -140,6 +161,7 @@ export async function fetchSnapshots(creds: LinkCredentials): Promise<RemoteSnap
     creds.backendUrl,
     '/api/link/holdings',
     { userId: creds.userId, userSecret: creds.userSecret },
+    SYNC_TIMEOUT_MS,
   );
   return result.snapshots ?? [];
 }

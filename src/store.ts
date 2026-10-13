@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import type {
   AppData,
   AppSettings,
+  Bps,
+  Cents,
   Category,
   FISettings,
   Holding,
@@ -29,6 +31,16 @@ import {
   type SyncSummary,
 } from './lib/linking/sync';
 import { fetchSnapshots } from './lib/linking/client';
+import type { RemoteSnapshot } from './lib/linking/types';
+import { applySavingsTarget } from './lib/setup';
+
+/** What first-run setup asks for. Every field may be zero — all of it is skippable. */
+export interface SetupChoices {
+  monthlyIncomeCents: Cents;
+  savingsBps: Bps;
+  startingBalanceCents: Cents;
+  monthlyContributionCents: Cents;
+}
 
 /**
  * Application state.
@@ -120,8 +132,19 @@ export interface StoreState {
   updateLinkSettings: (patch: Partial<LinkSettings>) => void;
   connectBrokerage: (returnUrl: string) => Promise<string>;
   syncLinkedAccounts: () => Promise<SyncSummary>;
+  importSnapshots: (snapshots: RemoteSnapshot[]) => SyncSummary;
   unlinkAccountById: (accountId: string, revokeAtProvider: boolean) => Promise<void>;
   syncing: boolean;
+  /** Last sync attempt of any kind, for the backoff in `autoSync.ts`. */
+  lastSyncAttemptAt: number | null;
+  /** Failures since the last success. Reset on success. */
+  syncFailures: number;
+  /** Set when the provider says the credential is dead and only the user can fix it. */
+  syncNeedsReconnect: boolean;
+
+  // First-run setup
+  completeSetup: (choices: SetupChoices) => void;
+  dismissSetup: () => void;
 
   // Settings & whole-dataset operations
   updateSettings: (patch: Partial<AppSettings>) => void;
@@ -161,6 +184,9 @@ export const useStore = create<StoreState>((set, get) => {
     loading: true,
     error: null,
     syncing: false,
+    lastSyncAttemptAt: null,
+    syncFailures: 0,
+    syncNeedsReconnect: false,
 
     load: async () => {
       try {
@@ -490,14 +516,23 @@ export const useStore = create<StoreState>((set, get) => {
       const creds = linkCredentials(get().data.settings.linking);
       if (!creds) throw new Error('Linking is not configured.');
 
-      set({ syncing: true });
+      set({ syncing: true, lastSyncAttemptAt: Date.now() });
       try {
         const snapshots = await fetchSnapshots(creds);
         const result = mergeSnapshots(get().data.accounts, snapshots, creds.provider);
         mutate((data) => ({ ...data, accounts: result.accounts }));
+        set({ syncFailures: 0, syncNeedsReconnect: false });
         return result.summary;
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Sync failed.';
+        // A dead credential is not a transient failure: retrying cannot fix it,
+        // and with an aggregator that bills per call it isn't free to keep
+        // trying. Automatic syncing stops until the user reconnects.
+        const needsReconnect = (error as { needsReconnect?: boolean })?.needsReconnect === true;
+        set((state) => ({
+          syncFailures: state.syncFailures + 1,
+          syncNeedsReconnect: needsReconnect,
+        }));
         mutate((data) => ({
           ...data,
           accounts: markSyncFailure(data.accounts, creds.provider, message),
@@ -509,6 +544,24 @@ export const useStore = create<StoreState>((set, get) => {
     },
 
     /**
+     * Merge holdings read out of a brokerage's own export file.
+     *
+     * Identical merge rules to a live sync — the file owns holdings and
+     * prices, the person owns contributions, classification and any rename —
+     * with one difference: a file speaks only for the accounts inside it, so
+     * accounts imported from elsewhere are left alone rather than marked as
+     * missing. Synchronous because the parsing already happened; there is no
+     * network here and never will be.
+     */
+    importSnapshots: (snapshots) => {
+      const result = mergeSnapshots(get().data.accounts, snapshots, 'file', Date.now(), {
+        markMissing: false,
+      });
+      mutate((data) => ({ ...data, accounts: result.accounts }));
+      return result.summary;
+    },
+
+    /**
      * Detach an account from its connection. The holdings stay as ordinary
      * manual entries — disconnecting is not a request to delete a portfolio.
      */
@@ -516,7 +569,9 @@ export const useStore = create<StoreState>((set, get) => {
       const account = get().data.accounts.find((a) => a.id === accountId);
       const creds = linkCredentials(get().data.settings.linking);
 
-      if (revokeAtProvider && account?.link && creds) {
+      // An imported account has nothing to revoke — there is no connection
+      // anywhere, only a file that was read once.
+      if (revokeAtProvider && account?.link && account.link.provider !== 'file' && creds) {
         // Revoking can fail (already revoked, provider down); the local
         // unlink should still go through so the user isn't stuck.
         await disconnectAccount(creds, account.link.providerAccountId).catch(() => undefined);
@@ -524,6 +579,82 @@ export const useStore = create<StoreState>((set, get) => {
 
       mutate((data) => ({ ...data, accounts: unlinkAccount(data.accounts, accountId) }));
     },
+
+    /**
+     * Apply everything first-run setup collected, in one write.
+     *
+     * One mutation rather than four, so a phone that gets backgrounded halfway
+     * through cannot leave a half-configured budget behind.
+     */
+    completeSetup: ({
+      monthlyIncomeCents,
+      savingsBps,
+      startingBalanceCents,
+      monthlyContributionCents,
+    }) =>
+      mutate((data) => {
+        const incomeSources =
+          data.incomeSources.length > 0
+            ? data.incomeSources.map((source, i) =>
+                i === 0 ? { ...source, monthlyCents: monthlyIncomeCents } : source,
+              )
+            : [
+                {
+                  id: newId('inc'),
+                  name: 'Take-home pay',
+                  kind: 'salary' as const,
+                  monthlyCents: monthlyIncomeCents,
+                },
+              ];
+
+        // Only ever creates the starting account on a first run. Someone
+        // re-running setup already has real accounts, and a second
+        // "Investments" holding a rough total would double-count them.
+        const accounts = [...data.accounts];
+        if (data.accounts.length === 0 && (startingBalanceCents > 0 || monthlyContributionCents > 0)) {
+          accounts.push({
+            id: newId('acct'),
+            name: 'Investments',
+            kind: 'taxable',
+            taxTreatment: 'taxable',
+            monthlyContributionCents,
+            holdings:
+              startingBalanceCents > 0
+                ? [
+                    {
+                      id: newId('hold'),
+                      symbol: '$TOTAL',
+                      name: 'Starting total',
+                      // Unclassified on purpose: a round number someone typed
+                      // is not evidence of what it is invested in, and guessing
+                      // would put a fiction in the allocation chart.
+                      assetClass: 'other' as const,
+                      shares: 1,
+                      priceCents: startingBalanceCents,
+                      // Equal to the balance, so it shows no gain rather than
+                      // claiming the whole balance is profit.
+                      costBasisCents: startingBalanceCents,
+                    },
+                  ]
+                : [],
+          });
+        }
+
+        return {
+          ...data,
+          incomeSources,
+          categories: applySavingsTarget(data.categories, savingsBps),
+          accounts,
+          settings: { ...data.settings, setupCompletedAt: Date.now() },
+        };
+      }),
+
+    /** Leave setup without changing anything, and don't offer it again. */
+    dismissSetup: () =>
+      mutate((data) => ({
+        ...data,
+        settings: { ...data.settings, setupCompletedAt: Date.now() },
+      })),
 
     updateSettings: (patch) =>
       mutate((data) => ({ ...data, settings: { ...data.settings, ...patch } })),
