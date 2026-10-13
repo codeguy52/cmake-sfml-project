@@ -113,6 +113,8 @@ two values in this directory's `.env` (git-ignored) and start it with
 
 ### Cloudflare Workers
 
+From a terminal:
+
 ```sh
 cd server
 npx wrangler secret put SNAPTRADE_CLIENT_ID
@@ -120,9 +122,19 @@ npx wrangler secret put SNAPTRADE_CONSUMER_KEY
 npx wrangler deploy
 ```
 
-`wrangler.toml` sets the entry point and `nodejs_compat`. Edit `ALLOWED_ORIGINS`
-there to your deployed app's origin — it is configuration, not a secret, which
-is why it lives in the file and the keys do not.
+Or entirely from the browser, which is the path to use if you'd rather not
+install anything: in the Cloudflare dashboard, **Workers → Create → Import a
+repository**, pick this repo, set the root directory to `server` and the deploy
+command to `npx wrangler deploy`. Then open the worker's **Settings → Variables
+and Secrets** and add `SNAPTRADE_CLIENT_ID` and `SNAPTRADE_CONSUMER_KEY` as
+**Secret** (not plaintext) values.
+
+Either way the keys are typed into Cloudflare, never into this repo.
+
+`wrangler.toml` sets the entry point, `nodejs_compat`, and `ALLOWED_ORIGINS`.
+That last one is configuration rather than a secret, which is why it lives in
+the file — but note that it is authoritative on every deploy, so editing it in
+the dashboard is undone by the next build. Change it here instead.
 
 ### Deno Deploy
 
