@@ -16,7 +16,13 @@ compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
 [vars]
-# Not a secret: the origins allowed to call this backend. Replace with your own
-# deployed app URL — an empty value blocks every browser request.
-ALLOWED_ORIGINS = "http://localhost:5173"
+# Not a secret: the origins allowed to call this backend. An empty value blocks
+# every browser request, and an origin missing from this list fails as a CORS
+# error in the browser rather than as anything the app can explain — so the
+# deployed app's own origin belongs here from the first deploy, not after the
+# first confusing failure.
+#
+# Deploying your own copy? Replace the github.io entry with wherever you serve
+# the app from. The localhost entry is for running it locally with `npm run dev`.
+ALLOWED_ORIGINS = "https://codeguy52.github.io,http://localhost:5173,http://127.0.0.1:4173"
 # SNAPTRADE_AUTH_MODE = "commercial"   # default is personal
