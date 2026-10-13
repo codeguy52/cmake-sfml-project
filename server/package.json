@@ -11,7 +11,9 @@
     "start": "node src/server.js",
     "test": "node --test \"src/*.test.js\"",
     "dev": "PROVIDER=mock ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:4173 node src/server.js",
-    "dev:personal": "PROVIDER=mock-personal ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:4173 node src/server.js"
+    "dev:personal": "PROVIDER=mock-personal ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:4173 node src/server.js",
+    "//build": "There is nothing to build — Wrangler bundles src/worker.js itself. This exists because Cloudflare's build setup prefills `npm run build`, and a missing script fails the deploy with an error about package.json rather than about the thing that is actually wrong.",
+    "build": "node -e \"console.log('No build step: wrangler bundles src/worker.js at deploy time.')\""
   },
   "dependencies": {
     "snaptrade-typescript-sdk": "^12.2.3"
