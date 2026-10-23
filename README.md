@@ -319,11 +319,14 @@ table view — that's the documented relief, not a nicety.
   against those. A broker that formats things differently may need its columns
   recognised; the review step exists so you see what was read before it counts
   toward anything.
-- **The real SnapTrade path has never run against the live API.** It is built on
-  the official SDK rather than hand-rolled HTTP, which removes the request
-  signing as a source of error, but this repo had no network access to SnapTrade
-  to prove it end to end. Both mock providers and every app-side path are
-  tested; first contact with real data is yours.
+- **The SnapTrade path has had limited contact with the live API.** Credentials,
+  account listing and positions have been exercised against a real personal key;
+  the first attempt found that `/holdings` had been retired and now answers 410,
+  which is why positions and balances are fetched separately. Option contract
+  values are computed from the API's own `multiplier` and unit-tested, but have
+  not been checked against a real options position. Every sync reconciles its
+  arithmetic against the brokerage's reported account total and says so when the
+  two disagree — trust that warning over the total.
 - **Projections are arithmetic, not forecasts.** A single smooth rate of return,
   steady contributions and unchanging spending are all fictions. A portfolio
   averaging 7% still has years down 30%, and the order those years arrive in
