@@ -88,63 +88,67 @@ function mapAccount(raw) {
   };
 }
 
-function mapPosition(raw) {
-  const symbol =
-    first(raw, 'symbol.symbol.raw_symbol', 'symbol.symbol.symbol', 'symbol.raw_symbol') ??
-    'UNKNOWN';
-  const units = Number(first(raw, 'units') ?? 0);
-  const averagePrice = first(raw, 'average_purchase_price');
+/**
+ * Positions, as the current API returns them.
+ *
+ * `/accounts/{id}/positions/all` returns one list for every instrument kind,
+ * discriminated by `instrument.kind` — stocks, ETFs, mutual funds, bonds,
+ * crypto, options, futures and CFDs together. An earlier version of this file
+ * called `/holdings`, which SnapTrade has since retired; it answers 410 Gone,
+ * which is what sent this rewrite.
+ *
+ * Two fields here are per *share*, not per position: `price` and `cost_basis`.
+ * For contracts the share count is `units * multiplier`, which is the thing
+ * that makes an option position worth 100x what the naive arithmetic says.
+ */
+export function mapPosition(raw) {
+  const instrument = raw?.instrument ?? {};
+  const kind = String(instrument.kind ?? '').toLowerCase();
+
+  const contracts = Number(raw?.units ?? 0);
+  // Options and futures quote per underlying share and trade in contracts.
+  // `multiplier` is how many shares a contract carries — 100 for a standard
+  // equity option, 10 for a mini. Everything else is one-for-one.
+  const multiplier = Number(instrument.multiplier ?? 1);
+  const perContract = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
+
+  const pricePerShare = Number(raw?.price ?? 0);
+  const symbol = String(
+    instrument.raw_symbol ?? instrument.symbol ?? instrument.id ?? 'UNKNOWN',
+  ).toUpperCase();
 
   const position = {
-    symbol: String(symbol).toUpperCase(),
-    units,
-    priceCents: toCents(first(raw, 'price')),
-    currency: String(first(raw, 'symbol.symbol.currency.code', 'currency.code') ?? 'USD'),
+    symbol: symbol.slice(0, 40),
+    // Units stay in the unit the brokerage reports — contracts for options —
+    // so the holding reads the way the statement does. The multiplier is
+    // folded into the price instead, which keeps units x price correct.
+    units: Number.isFinite(contracts) ? contracts : 0,
+    priceCents: toCents(pricePerShare * perContract),
+    currency: String(raw?.currency ?? instrument.currency ?? 'USD'),
   };
 
-  const description = first(raw, 'symbol.symbol.description', 'symbol.description');
+  const description = instrument.description ?? instrument.name;
   if (description) position.description = String(description);
 
-  const typeHint = first(raw, 'symbol.symbol.type.description', 'symbol.symbol.type.code');
-  if (typeHint) position.assetClassHint = String(typeHint);
+  // The asset-class guess reads this; `kind` is the API's own word for what
+  // the thing is, which beats parsing a free-text type description.
+  if (kind) position.assetClassHint = kind;
 
-  // SnapTrade reports cost basis per share; the app stores it as a total.
-  if (averagePrice !== undefined && Number.isFinite(units)) {
-    position.costBasisCents = toCents(Number(averagePrice) * units);
+  // A cash-equivalent position (a money market fund, typically) is *also*
+  // counted in the account's cash balance, per SnapTrade's own note. Marking
+  // it lets the reconciliation below notice if that double-counts.
+  if (raw?.cash_equivalent === true) position.cashEquivalent = true;
+
+  // `cost_basis` is per share, like `price`.
+  const costBasis = raw?.cost_basis;
+  if (costBasis !== undefined && costBasis !== null && Number.isFinite(contracts)) {
+    position.costBasisCents = toCents(Number(costBasis) * perContract * contracts);
   }
 
-  return position;
-}
-
-/**
- * Option positions.
- *
- * Deliberately marked for review rather than valued confidently: equity
- * options are quoted per share but held in contracts of 100, and whether
- * SnapTrade's `price` already accounts for that is not something this code can
- * verify without a live options position to check against. Reporting a value
- * that is wrong by 100x inside a net-worth total would be worse than saying so,
- * so the app surfaces these for confirmation.
- */
-function mapOptionPosition(raw) {
-  const symbol =
-    first(raw, 'symbol.option_symbol.ticker', 'symbol.description', 'symbol.id') ?? 'OPTION';
-  const units = Number(first(raw, 'units') ?? 0);
-  const averagePrice = first(raw, 'average_purchase_price');
-
-  const position = {
-    symbol: String(symbol).toUpperCase(),
-    units,
-    priceCents: toCents(first(raw, 'price')),
-    currency: String(first(raw, 'currency.code') ?? 'USD'),
-    assetClassHint: 'option',
-    needsReview: true,
-  };
-
-  const description = first(raw, 'symbol.description');
-  if (description) position.description = String(description);
-  if (averagePrice !== undefined && Number.isFinite(units)) {
-    position.costBasisCents = toCents(Number(averagePrice) * units);
+  // An option whose multiplier the API did not state is the one case worth
+  // flagging rather than valuing, since the error would be 100x.
+  if (kind === 'option' && !Number.isFinite(multiplier)) {
+    position.needsReview = true;
   }
 
   return position;
@@ -157,7 +161,7 @@ function mapOptionPosition(raw) {
  * account's own base currency is summed; anything else is reported as a
  * warning rather than being added to a total it does not belong in.
  */
-function mapCash(balances, baseCurrency) {
+export function mapCash(balances, baseCurrency) {
   if (!Array.isArray(balances)) return { cashCents: 0, warnings: [] };
 
   let cashCents = 0;
@@ -299,33 +303,61 @@ export function createSnaptradeProvider(env = globalThis.process?.env ?? {}) {
       for (const rawAccount of accounts) {
         const account = mapAccount(rawAccount);
 
-        let holdings;
+        // Positions and balances are separate calls. The old `/holdings`
+        // endpoint that returned both is gone — it answers 410 — and nothing
+        // replaced it, so two requests per account is the current shape.
+        let results;
         try {
-          // One call returns the account, its balances and its positions —
-          // where the previous implementation made three.
-          const response = await client().accountInformation.getUserHoldings({
+          const response = await client().accountInformation.getAllAccountPositions({
             ...params,
             accountId: account.id,
           });
-          holdings = response.data;
+          results = response.data?.results;
         } catch (error) {
-          throw wrap(error, `Could not read holdings for ${account.name}`);
+          throw wrap(error, `Could not read positions for ${account.name}`);
         }
 
-        const positions = [
-          ...(Array.isArray(holdings?.positions) ? holdings.positions.map(mapPosition) : []),
-          ...(Array.isArray(holdings?.option_positions)
-            ? holdings.option_positions.map(mapOptionPosition)
-            : []),
-        ];
+        let balances;
+        try {
+          const response = await client().accountInformation.getUserAccountBalance({
+            ...params,
+            accountId: account.id,
+          });
+          balances = response.data;
+        } catch (error) {
+          throw wrap(error, `Could not read balances for ${account.name}`);
+        }
 
-        const { cashCents, warnings } = mapCash(holdings?.balances, account.currency);
-        const optionCount = positions.filter((p) => p.needsReview).length;
-        if (optionCount > 0) {
+        const positions = Array.isArray(results) ? results.map(mapPosition) : [];
+        const { cashCents, warnings } = mapCash(balances, account.currency);
+
+        const needsReview = positions.filter((p) => p.needsReview).length;
+        if (needsReview > 0) {
           warnings.push(
-            `${optionCount} option position${optionCount === 1 ? '' : 's'} imported — check the ` +
-              'value, since option prices may or may not already include the 100x contract ' +
-              'multiplier.',
+            `${needsReview} position${needsReview === 1 ? '' : 's'} could not be valued with ` +
+              'confidence — check against your statement.',
+          );
+        }
+
+        /**
+         * Reconcile against the brokerage's own total.
+         *
+         * Everything above is arithmetic on parts; the account's reported
+         * total is the brokerage's own answer for the whole. When they
+         * disagree, something here is wrong — a contract multiplier, a
+         * cash-equivalent position counted twice because it is also inside
+         * the cash balance, or a position kind not handled. Saying so beats
+         * showing a confident wrong number inside a net worth.
+         */
+        const computed =
+          positions.reduce((sum, p) => sum + Math.round(p.units * p.priceCents), 0) + cashCents;
+        const reported = account.balanceCents;
+        const drift = Math.abs(computed - reported);
+        if (reported > 0 && drift > Math.max(100, Math.round(reported * 0.005))) {
+          warnings.push(
+            `This account adds up to ${(computed / 100).toFixed(2)} here but ` +
+              `${(reported / 100).toFixed(2)} at the brokerage — check it before trusting the ` +
+              'total.',
           );
         }
 
