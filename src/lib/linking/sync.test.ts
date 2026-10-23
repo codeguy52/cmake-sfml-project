@@ -566,3 +566,86 @@ describe('option positions and provider warnings', () => {
     expect(flagged[0]!.holding.symbol).toBe('OPT');
   });
 });
+
+describe('accounts that are not investments', () => {
+  const snapshot = (
+    id: string,
+    name: string,
+    category: string | undefined,
+    balanceCents: number,
+  ): RemoteSnapshot => ({
+    account: {
+      id,
+      name,
+      institution: 'Robinhood',
+      balanceCents,
+      currency: 'USD',
+      ...(category ? { category } : {}),
+    },
+    positions: [],
+    ...(balanceCents !== 0 ? { cashCents: balanceCents } : {}),
+  });
+
+  it('keeps a line of credit out of the portfolio entirely', () => {
+    // A credit card arriving through the same brokerage login would otherwise
+    // land as an account worth -$190, understating the portfolio and leaving
+    // net worth reporting no debt at all.
+    const { accounts, summary } = mergeSnapshots(
+      [],
+      [
+        snapshot('inv', 'Robinhood Individual', 'INVESTMENT', 675_071),
+        snapshot('card', 'Robinhood Credit Card', 'LOC', -19_079),
+      ],
+      'snaptrade',
+      1000,
+    );
+
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]!.name).toBe('Robinhood Individual');
+    expect(summary.warnings.some((w) => w.includes('Robinhood Credit Card'))).toBe(true);
+  });
+
+  it('classifies a deposit account as cash whatever it is called', () => {
+    const { accounts } = mergeSnapshots(
+      [],
+      [snapshot('sav', 'Robinhood Savings', 'DEPOSIT', 500_000)],
+      'snaptrade',
+      1000,
+    );
+    expect(accounts[0]!.kind).toBe('cash');
+    expect(accounts[0]!.taxTreatment).toBe('taxable');
+  });
+
+  it('keeps an uncategorised account rather than dropping holdings', () => {
+    // Dropping someone's positions because a field was absent is the worse
+    // of the two mistakes.
+    const { accounts } = mergeSnapshots(
+      [],
+      [snapshot('unknown', 'Some Brokerage', undefined, 100_00)],
+      'snaptrade',
+      1000,
+    );
+    expect(accounts).toHaveLength(1);
+  });
+
+  it('does not mark an already-imported credit account as missing', () => {
+    // It was filtered, not revoked. Flagging it "not returned by provider"
+    // would be a lie, and would nag forever.
+    const existing = mergeSnapshots(
+      [],
+      [snapshot('card', 'Robinhood Credit Card', undefined, -19_079)],
+      'snaptrade',
+      1000,
+    ).accounts;
+
+    const { accounts, summary } = mergeSnapshots(
+      existing,
+      [snapshot('card', 'Robinhood Credit Card', 'LOC', -19_079)],
+      'snaptrade',
+      2000,
+    );
+
+    expect(accounts[0]!.link!.missingSince).toBeUndefined();
+    expect(summary.missing).toEqual([]);
+  });
+});

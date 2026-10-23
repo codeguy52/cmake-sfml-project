@@ -20,6 +20,16 @@ export interface RemoteAccount {
   mask?: string;
   /** The provider's account-type string, mapped to our kinds best-effort. */
   typeHint?: string;
+  /**
+   * The provider's normalised account category, where it gives one:
+   * `INVESTMENT`, `DEPOSIT` (checking or savings) or `LOC` (a line of credit).
+   *
+   * A connected brokerage login often exposes more than brokerage accounts —
+   * the bank accounts and credit cards behind the same login come too. A
+   * credit card is a debt, so letting one in as an account with a negative
+   * value both understates the portfolio and hides the debt from net worth.
+   */
+  category?: string;
   /** Total account value including any uninvested cash. */
   balanceCents: Cents;
   currency: string;
