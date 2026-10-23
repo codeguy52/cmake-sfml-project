@@ -72,6 +72,7 @@ function first(object, ...paths) {
 function mapAccount(raw) {
   const number = first(raw, 'number');
   const currency = String(first(raw, 'balance.total.currency', 'balance.total.currency.code') ?? 'USD');
+  const category = first(raw, 'account_category');
 
   return {
     id: String(first(raw, 'id')),
@@ -83,6 +84,11 @@ function mapAccount(raw) {
     typeHint: [first(raw, 'raw_type'), first(raw, 'meta.type'), first(raw, 'name')]
       .filter(Boolean)
       .join(' '),
+    // Normalised by SnapTrade across institutions: INVESTMENT, DEPOSIT (a
+    // checking or savings account) or LOC (a line of credit). The app decides
+    // what to do with each — a credit card is a debt, not a holding, and
+    // letting one into a portfolio total corrupts both that and net worth.
+    ...(category ? { category: String(category) } : {}),
     balanceCents: toCents(first(raw, 'balance.total.amount')),
     currency,
   };

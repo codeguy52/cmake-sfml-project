@@ -50,13 +50,45 @@ const KIND_RULES: { test: RegExp; result: KindGuess }[] = [
   { test: /checking|savings|cash\s*management/, result: { kind: 'cash', taxTreatment: 'taxable' } },
 ];
 
-/** Best-effort classification from the provider's type string and account name. */
-export function guessAccountKind(typeHint: string | undefined, name: string): KindGuess {
+/**
+ * Best-effort classification from the provider's type string and account name.
+ *
+ * `category` is the provider's own normalised answer where it has one, so it
+ * wins over guessing at words: a checking account called "Robinhood Savings"
+ * is a deposit account whatever its name suggests.
+ */
+export function guessAccountKind(
+  typeHint: string | undefined,
+  name: string,
+  category?: string,
+): KindGuess {
+  if ((category ?? '').toUpperCase() === 'DEPOSIT') {
+    return { kind: 'cash', taxTreatment: 'taxable' };
+  }
+
   const text = `${typeHint ?? ''} ${name}`.toLowerCase();
   for (const rule of KIND_RULES) {
     if (rule.test.test(text)) return rule.result;
   }
   return { kind: 'taxable', taxTreatment: 'taxable' };
+}
+
+/**
+ * Whether a provider account belongs in the investment list at all.
+ *
+ * A brokerage login usually carries more than brokerage accounts: the bank
+ * accounts and credit cards behind the same credentials arrive with them. A
+ * line of credit is a debt, and admitting one as an account with a negative
+ * value corrupts two numbers at once — it understates the portfolio and leaves
+ * net worth reporting no debt. Deposit accounts are real money and stay, as
+ * cash.
+ *
+ * Only an explicit `LOC` is excluded. An account the provider could not
+ * categorise is kept, because dropping someone's holdings on the strength of a
+ * missing field is the worse error.
+ */
+export function isPortfolioAccount(snapshot: RemoteSnapshot): boolean {
+  return (snapshot.account.category ?? '').toUpperCase() !== 'LOC';
 }
 
 /** Symbol used for the synthetic holding that carries uninvested cash. */
@@ -165,7 +197,7 @@ export interface MergeOptions {
  */
 export function mergeSnapshots(
   existing: InvestmentAccount[],
-  snapshots: RemoteSnapshot[],
+  snapshotsIn: RemoteSnapshot[],
   provider: LinkProvider,
   now: number = Date.now(),
   { markMissing = true }: MergeOptions = {},
@@ -185,6 +217,17 @@ export function mergeSnapshots(
     }
   };
 
+  let snapshots = snapshotsIn;
+  const excluded = snapshots.filter((s) => !isPortfolioAccount(s));
+  if (excluded.length > 0) {
+    summary.warnings.push(
+      `${excluded.map((s) => s.account.name).join(', ')} ${excluded.length === 1 ? 'is a line of credit and was' : 'are lines of credit and were'} not imported — ` +
+        'a debt is not a holding. Record it under Net worth instead.',
+    );
+  }
+  const excludedIds = new Set(excluded.map((s) => s.account.id));
+  snapshots = snapshots.filter(isPortfolioAccount);
+
   const byProviderId = new Map(
     existing
       .filter((a) => a.link?.provider === provider)
@@ -198,6 +241,10 @@ export function mergeSnapshots(
 
     const snapshot = snapshots.find((s) => s.account.id === account.link!.providerAccountId);
     if (!snapshot) {
+      // Filtered out above rather than genuinely gone. Leave it exactly as it
+      // is — the warning already tells the user it isn't tracked here.
+      if (excludedIds.has(account.link.providerAccountId)) return account;
+
       // This batch isn't authoritative, so absence says nothing. Leave the
       // account exactly as it was, unmentioned.
       if (!markMissing) return account;
@@ -237,7 +284,11 @@ export function mergeSnapshots(
   for (const snapshot of snapshots) {
     if (seen.has(snapshot.account.id) || byProviderId.has(snapshot.account.id)) continue;
 
-    const guess = guessAccountKind(snapshot.account.typeHint, snapshot.account.name);
+    const guess = guessAccountKind(
+      snapshot.account.typeHint,
+      snapshot.account.name,
+      snapshot.account.category,
+    );
     summary.added.push(snapshot.account.name);
     summary.positionCount += snapshot.positions.length;
     summary.totalValueCents += snapshotValue(snapshot);
