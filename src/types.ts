@@ -273,6 +273,14 @@ export interface AppSettings {
   fi: FISettings;
   linking: LinkSettings;
   /**
+   * The target asset mix, in basis points per asset class.
+   *
+   * Null until the user sets one, and deliberately so: drift measured against
+   * a mix nobody chose is noise dressed up as a finding. The app would rather
+   * ask than invent an allocation on someone's behalf.
+   */
+  targetMixBps: Partial<Record<AssetClass, Bps>> | null;
+  /**
    * When first-run setup was finished or dismissed. Null means it hasn't been,
    * and the app offers it. A dataset that already has income, spending or
    * accounts on it counts as set up — nobody gets dropped back into a wizard.

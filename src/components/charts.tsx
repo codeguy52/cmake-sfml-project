@@ -475,7 +475,7 @@ export function DriftChart({
         <YAxis type="category" dataKey="label" width={104} tickLine={false} axisLine={false} />
         <Tooltip content={<MoneyTooltip />} />
         <ReferenceLine x={0} stroke="var(--axis)" />
-        <Bar dataKey="drift" name="Drift from target" radius={[4, 4, 4, 4]} barSize={16}>
+        <Bar dataKey="drift" name="Over / under target" radius={[4, 4, 4, 4]} barSize={16}>
           {data.map((row) => (
             <Cell
               key={row.assetClass}
