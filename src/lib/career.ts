@@ -50,9 +50,19 @@ export const DEFAULT_CAREER: CareerPlan = {
   nominalRaiseBps: 300,
   raiseEveryYears: 1,
   steps: [],
-  // Half of each raise invested, half enjoyed. A defensible middle rather
-  // than a flattering assumption.
-  marginalSavingsBps: 5_000,
+  /*
+   * Every extra dollar invested, by default.
+   *
+   * This is what someone means when they say "I'll invest more when I earn
+   * more", and it is the only default under which a raise unambiguously
+   * brings FI closer. Anything less is lifestyle creep, which is a real
+   * thing worth modelling — but it has to be chosen, because the arithmetic
+   * is brutal and surprising: at a 4% withdrawal rate every extra dollar of
+   * annual spending adds 25 dollars to the target, while the same dollar
+   * saved adds one. A default of "half" quietly told people their pay rise
+   * had set them back.
+   */
+  marginalSavingsBps: 10_000,
 };
 
 /**

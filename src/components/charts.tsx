@@ -347,11 +347,24 @@ export function ProjectionChart({
   targetCents,
   startingBalanceCents,
   monthsToFI,
+  targetMoves = false,
 }: {
-  points: { year: number; balanceCents: Cents; contributedCents: Cents; growthCents: Cents }[];
+  points: {
+    year: number;
+    balanceCents: Cents;
+    contributedCents: Cents;
+    growthCents: Cents;
+    targetCents?: Cents;
+  }[];
   targetCents: Cents;
   startingBalanceCents: Cents;
   monthsToFI: number | null;
+  /**
+   * When spending is modelled as rising, the finish line moves. Drawing a
+   * flat line then is a lie the reader can see: the balance crosses it years
+   * before the app admits to FI.
+   */
+  targetMoves?: boolean;
 }) {
   const compact = useCompact();
 
@@ -365,6 +378,7 @@ export function ProjectionChart({
       starting: startingBalanceCents,
       contributed: p.contributedCents,
       growth: Math.max(0, p.growthCents),
+      'FI number': p.targetCents ?? targetCents,
     }));
 
   // Label roughly eight ticks whatever the horizon — a tick per year turns the
@@ -387,18 +401,20 @@ export function ProjectionChart({
         <Tooltip
           content={<MoneyTooltip total labelFormatter={(l) => `Year ${l}`} />}
         />
-        <ReferenceLine
-          y={targetCents}
-          stroke="var(--text-primary)"
-          strokeDasharray="5 4"
-          strokeOpacity={0.6}
-          label={{
-            value: `FI number ${compact(targetCents)}`,
-            position: 'insideTopLeft',
-            fill: 'var(--text-secondary)',
-            fontSize: 11,
-          }}
-        />
+        {!targetMoves && (
+          <ReferenceLine
+            y={targetCents}
+            stroke="var(--text-primary)"
+            strokeDasharray="5 4"
+            strokeOpacity={0.6}
+            label={{
+              value: `FI number ${compact(targetCents)}`,
+              position: 'insideTopLeft',
+              fill: 'var(--text-secondary)',
+              fontSize: 11,
+            }}
+          />
+        )}
         {monthsToFI !== null && (
           <ReferenceLine
             x={Math.round(monthsToFI / 12)}
@@ -443,6 +459,19 @@ export function ProjectionChart({
           fillOpacity={0.85}
           strokeWidth={0}
         />
+        {targetMoves && (
+          <Area
+            type="monotone"
+            dataKey="FI number"
+            name="FI number (rising with spending)"
+            stroke="var(--text-primary)"
+            strokeDasharray="5 4"
+            strokeWidth={2}
+            fill="none"
+            fillOpacity={0}
+            dot={false}
+          />
+        )}
       </AreaChart>
     </ResponsiveContainer>
   );

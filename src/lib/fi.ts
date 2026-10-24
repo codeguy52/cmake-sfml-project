@@ -45,6 +45,12 @@ export interface ProjectionPoint {
   contributedCents: Cents;
   /** Balance minus starting balance minus contributions — i.e. compounding. */
   growthCents: Cents;
+  /**
+   * The target at this point in time. Constant unless a career plan has
+   * spending rising, in which case the finish line moves and the chart has to
+   * show that rather than a flat line the balance appears to cross early.
+   */
+  targetCents: Cents;
 }
 
 export interface FIProjection {
@@ -57,6 +63,10 @@ export interface FIProjection {
   fiDate: Date | null;
   /** Age at FI, when a current age is configured. */
   ageAtFI: number | null;
+  /** The target actually reached, which differs from today's when spending grows. */
+  targetAtFICents: Cents;
+  /** True when the target moves over the projection, i.e. spending is modelled as rising. */
+  targetMoves: boolean;
 }
 
 /**
@@ -115,6 +125,7 @@ export function projectToFI(params: {
       balanceCents: balance,
       contributedCents: 0,
       growthCents: 0,
+      targetCents: targetAt(0),
     },
   ];
 
@@ -132,6 +143,7 @@ export function projectToFI(params: {
         balanceCents: rounded,
         contributedCents: contributed,
         growthCents: rounded - startingBalanceCents - contributed,
+        targetCents: targetAt(m),
       });
     }
 
@@ -151,11 +163,15 @@ export function projectToFI(params: {
       ? null
       : new Date(startDate.getFullYear(), startDate.getMonth() + monthsToFI, startDate.getDate());
 
+  const targetMoves = points.some((p) => p.targetCents !== points[0]!.targetCents);
+
   return {
     points,
     monthsToFI,
     yearsToFI: monthsToFI === null ? null : monthsToFI / 12,
     fiDate,
+    targetAtFICents: monthsToFI === null ? targetAt(horizon) : targetAt(monthsToFI),
+    targetMoves,
     ageAtFI:
       monthsToFI === null || currentAge === null
         ? null
