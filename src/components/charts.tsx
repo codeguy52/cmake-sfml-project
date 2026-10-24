@@ -6,6 +6,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Legend,
   Line,
   LineChart,
   ReferenceLine,
@@ -443,6 +444,79 @@ export function ProjectionChart({
           strokeWidth={0}
         />
       </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+/**
+ * Career earnings over time: three lines, one axis.
+ *
+ * Take-home, what is invested out of it, and what is spent — all money, all in
+ * today's dollars, so they share a scale honestly. A second axis here would be
+ * the classic way to make a chart look informative while being unreadable.
+ *
+ * A line rather than bars because the question is shape over time: where the
+ * steps are, and whether the gap between earning and spending widens.
+ */
+export function CareerChart({
+  points,
+}: {
+  points: { year: number; takeHomeCents: Cents; annualContributionCents: Cents; annualSpendingCents: Cents }[];
+}) {
+  const compact = useCompact();
+
+  const data = points.map((p) => ({
+    year: p.year,
+    'Take-home': p.takeHomeCents,
+    Invested: p.annualContributionCents,
+    Spending: p.annualSpendingCents,
+  }));
+
+  const span = points.length > 0 ? points[points.length - 1]!.year : 0;
+  const tickStep = Math.max(1, Math.ceil(span / 8));
+  const ticks = data.map((d) => d.year).filter((y) => y % tickStep === 0);
+
+  return (
+    <ResponsiveContainer width="100%" height={260}>
+      <LineChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
+        <CartesianGrid vertical={false} />
+        <XAxis
+          dataKey="year"
+          ticks={ticks}
+          tickLine={false}
+          axisLine={false}
+          tickFormatter={(v: number) => (v === 0 ? 'Now' : `${v}y`)}
+        />
+        <YAxis
+          tickFormatter={(v: number) => compact(v)}
+          tickLine={false}
+          axisLine={false}
+          width={56}
+        />
+        <Tooltip content={<MoneyTooltip labelFormatter={(l) => (l === 0 ? 'Today' : `Year ${l}`)} />} />
+        <Legend />
+        <Line
+          type="monotone"
+          dataKey="Take-home"
+          stroke="var(--series-1)"
+          strokeWidth={2}
+          dot={false}
+        />
+        <Line
+          type="monotone"
+          dataKey="Invested"
+          stroke="var(--series-3)"
+          strokeWidth={2}
+          dot={false}
+        />
+        <Line
+          type="monotone"
+          dataKey="Spending"
+          stroke="var(--series-2)"
+          strokeWidth={2}
+          dot={false}
+        />
+      </LineChart>
     </ResponsiveContainer>
   );
 }

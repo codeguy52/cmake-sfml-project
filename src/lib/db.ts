@@ -68,7 +68,13 @@ export function migrate(data: AppData): AppData {
     settings: {
       ...seeded.settings,
       ...data.settings,
-      fi: { ...seeded.settings.fi, ...data.settings?.fi },
+      fi: {
+        ...seeded.settings.fi,
+        ...data.settings?.fi,
+        // Added after launch. An existing install has no career plan, and the
+        // default is off, so projections keep behaving exactly as before.
+        career: { ...seeded.settings.fi.career, ...(data.settings?.fi?.career ?? {}) },
+      },
       // Schema 2 added linking. A version-1 dataset has no `linking` block, so
       // the seeded default (backend URL empty, i.e. linking off) fills in and
       // the app keeps behaving exactly as it did before the upgrade.

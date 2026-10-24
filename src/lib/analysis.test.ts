@@ -1,3 +1,4 @@
+import { DEFAULT_CAREER } from './career';
 import { describe, expect, it } from 'vitest';
 import {
   analyzeAccess,
@@ -10,6 +11,7 @@ import { summarizePortfolio } from './investments';
 import type { FISettings, Holding, InvestmentAccount } from '../types';
 
 const fi = (over: Partial<FISettings> = {}): FISettings => ({
+  career: DEFAULT_CAREER,
   safeWithdrawalRateBps: 400,
   expectedReturnBps: 700,
   inflationBps: 300,
