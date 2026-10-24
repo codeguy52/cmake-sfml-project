@@ -105,8 +105,18 @@ export default function FIPage() {
           <div className="kpi-row">
             <StatTile
               label="Your FI number"
-              value={fmt(status.fiNumberCents, false)}
-              sub={`${(10_000 / fi.safeWithdrawalRateBps).toFixed(0)}× annual spending of ${fmt(status.annualSpendingCents, false)}`}
+              value={fmt(
+                status.projection.targetMoves
+                  ? status.projection.targetAtFICents
+                  : status.fiNumberCents,
+                false,
+              )}
+              sub={
+                status.projection.targetMoves
+                  ? `Rises from ${fmt(status.fiNumberCents, false)} as your career plan grows your spending`
+                  : `${(10_000 / fi.safeWithdrawalRateBps).toFixed(0)}× annual spending of ${fmt(status.annualSpendingCents, false)}`
+              }
+              tone={status.projection.targetMoves ? 'bad' : undefined}
             />
             <StatTile
               label="Invested toward it"
@@ -231,6 +241,7 @@ export default function FIPage() {
                   <ProjectionChart
                     points={status.projection.points}
                     targetCents={status.fiNumberCents}
+                    targetMoves={status.projection.targetMoves}
                     startingBalanceCents={netWorth.fiAssetsCents}
                     monthsToFI={status.projection.monthsToFI}
                   />
@@ -247,6 +258,21 @@ export default function FIPage() {
                       <span className="swatch" style={{ background: 'var(--series-3)' }} aria-hidden="true" />
                       Investment growth
                     </span>
+                    {status.projection.targetMoves && (
+                      <span className="legend-item">
+                        {/* A dashed rule rather than a filled swatch: the line
+                            is a threshold, not another slice of the stack. */}
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            width: 14,
+                            borderTop: '2px dashed var(--text-primary)',
+                            marginRight: 2,
+                          }}
+                        />
+                        FI number, rising with your spending
+                      </span>
+                    )}
                   </div>
                 </>
               )}

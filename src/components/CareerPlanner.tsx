@@ -10,6 +10,7 @@ import { newId } from '../lib/seed';
 import { bpsToPercent } from '../lib/money';
 import type { Cents } from '../types';
 import {
+  Callout,
   Card,
   ChartFrame,
   Field,
@@ -76,6 +77,10 @@ export default function CareerPlanner({
   );
 
   const realRate = realRaiseRate(plan, inflationBps);
+  const multiple = safeWithdrawalRateBps > 0 ? 10_000 / safeWithdrawalRateBps : 0;
+  // What spending becomes at the far end of the curve, which is the figure
+  // that decides the finish line.
+  const endSpendingCents = curve.length > 0 ? curve[curve.length - 1]!.annualSpendingCents : 0;
   const update = (patch: Partial<CareerPlan>): void => onChange({ ...plan, ...patch });
 
   const setStep = (id: string, patch: Partial<CareerStep>): void =>
@@ -276,12 +281,19 @@ export default function CareerPlanner({
           </ChartFrame>
 
           {plan.marginalSavingsBps < 10_000 && (
-            <p className="field-hint" style={{ margin: 0 }}>
-              Spending {bpsToPercent(10_000 - plan.marginalSavingsBps).toFixed(0)}% of each raise
-              lifts your yearly spending, and the FI number is a multiple of that — so the target
-              moves away while the balance climbs. That is not an argument for spending nothing;
-              it is the trade-off made visible.
-            </p>
+            <Callout tone="warning">
+              <strong>
+                Spending {bpsToPercent(10_000 - plan.marginalSavingsBps).toFixed(0)}% of each
+                raise moves your FI number from {fmt(baseAnnualSpendingCents * multiple, false)} to{' '}
+                {fmt(endSpendingCents * multiple, false)}.
+              </strong>{' '}
+              The target is a multiple of what you spend, so at a{' '}
+              {(10_000 / safeWithdrawalRateBps).toFixed(0)}× multiple each extra dollar of yearly
+              spending adds {(10_000 / safeWithdrawalRateBps).toFixed(0)} dollars to the finish
+              line, while the same dollar saved adds one. That is why a raise you absorb into
+              your lifestyle can genuinely push FI further away — set this to 100% to model
+              investing every raise instead.
+            </Callout>
           )}
         </div>
       )}

@@ -260,3 +260,89 @@ describe('the curve for the chart', () => {
     expect(points[5]!.takeHomeCents).toBeGreaterThan(points[4]!.takeHomeCents * 1.3);
   });
 });
+
+describe('the default plan', () => {
+  it('invests every raise', () => {
+    // The default must make a pay rise unambiguously good. Anything less is
+    // lifestyle creep, which is real but has to be chosen — a default of
+    // "half" quietly told people their raise had set them back.
+    expect(DEFAULT_CAREER.marginalSavingsBps).toBe(10_000);
+  });
+
+  it('is off, so an existing projection does not move on upgrade', () => {
+    expect(DEFAULT_CAREER.enabled).toBe(false);
+  });
+
+  it('brings FI closer with every added job move, at the default split', () => {
+    const run = (steps: CareerPlan['steps']) => {
+      const p = plan({ nominalRaiseBps: 500, marginalSavingsBps: 10_000, steps });
+      const paths = careerPaths({
+        plan: p,
+        baseAnnualTakeHomeCents: 5_460_000,
+        baseMonthlyContributionCents: 232_197,
+        baseAnnualSpendingCents: 2_670_700,
+        safeWithdrawalRateBps: 500,
+        inflationBps: 300,
+      });
+      return projectToFI({
+        startingBalanceCents: 2_461_900,
+        monthlyContributionCents: 232_197,
+        annualRealRate: realAnnualRate(800, 300),
+        targetCents: 53_414_200,
+        monthlyContributionAt: paths.monthlyContributionAt,
+        targetAtMonth: paths.targetAt,
+      }).monthsToFI!;
+    };
+
+    const one = run([{ id: 'a', atYear: 1, annualTakeHomeCents: 7_000_000, label: 'Role 1' }]);
+    const two = run([
+      { id: 'a', atYear: 1, annualTakeHomeCents: 7_000_000, label: 'Role 1' },
+      { id: 'b', atYear: 4, annualTakeHomeCents: 8_400_000, label: 'Role 2' },
+    ]);
+
+    // The reported bug: adding a better-paid role made FI later.
+    expect(two).toBeLessThan(one);
+  });
+});
+
+describe('the target the chart draws', () => {
+  const paths = (marginalSavingsBps: number) =>
+    careerPaths({
+      plan: plan({ nominalRaiseBps: 800, marginalSavingsBps }),
+      baseAnnualTakeHomeCents: TAKE_HOME,
+      baseMonthlyContributionCents: CONTRIBUTION,
+      baseAnnualSpendingCents: SPENDING,
+      safeWithdrawalRateBps: 400,
+      inflationBps: 300,
+    });
+
+  const project = (marginalSavingsBps: number) =>
+    projectToFI({
+      startingBalanceCents: 10_000_000,
+      monthlyContributionCents: CONTRIBUTION,
+      annualRealRate: realAnnualRate(700, 300),
+      targetCents: SPENDING * 25,
+      monthlyContributionAt: paths(marginalSavingsBps).monthlyContributionAt,
+      targetAtMonth: paths(marginalSavingsBps).targetAt,
+    });
+
+  it('reports a still target when spending does not grow', () => {
+    const p = project(10_000);
+    expect(p.targetMoves).toBe(false);
+    expect(p.targetAtFICents).toBe(SPENDING * 25);
+  });
+
+  it('reports a moving target when spending grows', () => {
+    // Without this the chart draws a flat line the balance visibly crosses
+    // years before the app admits to FI.
+    const p = project(0);
+    expect(p.targetMoves).toBe(true);
+    expect(p.targetAtFICents).toBeGreaterThan(SPENDING * 25);
+  });
+
+  it('carries the target on every point, so the chart can draw the real line', () => {
+    const p = project(0);
+    expect(p.points.every((pt) => pt.targetCents > 0)).toBe(true);
+    expect(p.points[p.points.length - 1]!.targetCents).toBeGreaterThan(p.points[0]!.targetCents);
+  });
+});
