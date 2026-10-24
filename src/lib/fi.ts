@@ -1,4 +1,5 @@
 import type { Cents, FISettings } from '../types';
+import { careerPaths } from './career';
 import { BPS_SCALE, roundCents, toBps } from './money';
 
 /**
@@ -75,6 +76,19 @@ export function projectToFI(params: {
   horizonMonths?: number;
   currentAge?: number | null;
   startDate?: Date;
+  /**
+   * A contribution that changes over time — raises, a promotion, a career
+   * break. Given a month from now, returns what is invested that month.
+   * Omitted means the flat `monthlyContributionCents` throughout.
+   */
+  monthlyContributionAt?: (month: number) => Cents;
+  /**
+   * A target that moves, for when spending is expected to change. The finish
+   * line is a multiple of spending, so a raise that lifts your standard of
+   * living pushes it further away even as the balance climbs faster. A model
+   * that ignored this would flatter every pay rise.
+   */
+  targetAtMonth?: (month: number) => Cents;
 }): FIProjection {
   const {
     startingBalanceCents,
@@ -87,6 +101,8 @@ export function projectToFI(params: {
 
   const rm = monthlyRate(annualRealRate);
   const horizon = Math.min(params.horizonMonths ?? MAX_PROJECTION_MONTHS, MAX_PROJECTION_MONTHS);
+  const contributionAt = params.monthlyContributionAt ?? (() => monthlyContributionCents);
+  const targetAt = params.targetAtMonth ?? (() => targetCents);
 
   let balance = startingBalanceCents;
   let contributed = 0;
@@ -103,8 +119,9 @@ export function projectToFI(params: {
   ];
 
   for (let m = 1; m <= horizon; m++) {
-    balance = balance * (1 + rm) + monthlyContributionCents;
-    contributed += monthlyContributionCents;
+    const contribution = contributionAt(m);
+    balance = balance * (1 + rm) + contribution;
+    contributed += contribution;
 
     // Record yearly, so a 50-year projection is 50 points and not 600.
     if (m % 12 === 0) {
@@ -118,14 +135,15 @@ export function projectToFI(params: {
       });
     }
 
-    if (monthsToFI === null && targetCents > 0 && balance >= targetCents) {
+    const targetNow = targetAt(m);
+    if (monthsToFI === null && targetNow > 0 && balance >= targetNow) {
       monthsToFI = m;
       // Keep projecting to the horizon so the chart still shows the curve
       // past the crossing point.
     }
 
     // A shrinking balance with no contributions will never reach the target.
-    if (balance <= 0 && monthlyContributionCents <= 0) break;
+    if (balance <= 0 && contribution <= 0) break;
   }
 
   const fiDate =
@@ -206,6 +224,8 @@ export function computeFIStatus(params: {
   monthlyIncomeCents: Cents;
   fiAssetsCents: Cents;
   monthlyContributionCents: Cents;
+  /** Take-home pay per month, for projecting career earnings. */
+  monthlyTakeHomeCents?: Cents;
   now?: Date;
 }): FIStatus {
   const { settings, monthlyFundedSpendingCents, monthlyIncomeCents, fiAssetsCents } = params;
@@ -216,6 +236,19 @@ export function computeFIStatus(params: {
   const target = fiNumber(annualSpending, settings.safeWithdrawalRateBps);
   const rate = realAnnualRate(settings.expectedReturnBps, settings.inflationBps);
 
+  // A career plan changes both schedules: contributions rise with pay, and
+  // the target rises with whatever share of that pay gets spent.
+  const paths = settings.career.enabled
+    ? careerPaths({
+        plan: settings.career,
+        baseAnnualTakeHomeCents: (params.monthlyTakeHomeCents ?? monthlyIncomeCents) * 12,
+        baseMonthlyContributionCents: params.monthlyContributionCents,
+        baseAnnualSpendingCents: annualSpending,
+        safeWithdrawalRateBps: settings.safeWithdrawalRateBps,
+        inflationBps: settings.inflationBps,
+      })
+    : null;
+
   const projection = projectToFI({
     startingBalanceCents: fiAssetsCents,
     monthlyContributionCents: params.monthlyContributionCents,
@@ -223,6 +256,9 @@ export function computeFIStatus(params: {
     targetCents: target,
     currentAge: settings.currentAge,
     startDate: now,
+    ...(paths
+      ? { monthlyContributionAt: paths.monthlyContributionAt, targetAtMonth: paths.targetAt }
+      : {}),
   });
 
   const yearsUntilTarget =

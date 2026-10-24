@@ -1,3 +1,4 @@
+import { DEFAULT_CAREER } from './career';
 import { describe, expect, it } from 'vitest';
 import type { FISettings } from '../types';
 import {
@@ -13,6 +14,7 @@ import {
 } from './fi';
 
 const settings: FISettings = {
+  career: DEFAULT_CAREER,
   safeWithdrawalRateBps: 400,
   expectedReturnBps: 700,
   inflationBps: 300,

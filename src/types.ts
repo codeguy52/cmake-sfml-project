@@ -1,3 +1,4 @@
+import type { CareerPlan } from './lib/career';
 /**
  * Domain model.
  *
@@ -224,6 +225,13 @@ export interface FISettings {
   currentAge: number | null;
   /** Target age for the Coast FI calculation. */
   targetRetirementAge: number | null;
+  /**
+   * Expected career earnings over time. Nobody's pay stays flat for thirty
+   * years, and a projection that assumes it does understates what is possible
+   * — while one that assumes raises are always invested overstates it. See
+   * `lib/career.ts`.
+   */
+  career: CareerPlan;
 }
 
 /**

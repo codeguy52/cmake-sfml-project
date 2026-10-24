@@ -1,5 +1,6 @@
 import type { AppData, AppSettings, Category } from '../types';
 import { slotColor } from './palette';
+import { DEFAULT_CAREER } from './career';
 
 export const SCHEMA_VERSION = 2;
 
@@ -37,6 +38,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     autoSync: true,
   },
   fi: {
+    career: DEFAULT_CAREER,
     safeWithdrawalRateBps: 400, // the 4% rule
     expectedReturnBps: 700,
     inflationBps: 300,

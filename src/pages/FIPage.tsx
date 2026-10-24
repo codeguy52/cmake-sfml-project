@@ -22,6 +22,7 @@ import {
   useFormatMoney,
 } from '../components/ui';
 import { MoneyTable, ProjectionChart } from '../components/charts';
+import CareerPlanner from '../components/CareerPlanner';
 
 /** Where the projection's monthly contribution comes from. */
 type ContributionSource = 'budget' | 'accounts';
@@ -256,6 +257,17 @@ export default function FIPage() {
                 </p>
               )}
             </ChartFrame>
+
+            <CareerPlanner
+              plan={fi.career}
+              onChange={(career) => updateFISettings({ career })}
+              baseAnnualTakeHomeCents={summary.monthlyIncomeCents * 12}
+              baseMonthlyContributionCents={monthlyContribution}
+              baseAnnualSpendingCents={status.annualSpendingCents}
+              safeWithdrawalRateBps={fi.safeWithdrawalRateBps}
+              inflationBps={fi.inflationBps}
+              years={status.projection.yearsToFI ?? 30}
+            />
 
             <div className="grid grid-2">
               <Card title="Assumptions" note="Change these and every figure on this page moves.">
