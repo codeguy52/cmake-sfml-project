@@ -70,9 +70,13 @@ const ACCOUNT_KINDS: { value: AccountKind; label: string; tax: TaxTreatment }[] 
   { value: 'other', label: 'Other', tax: 'taxable' },
 ];
 
-/** A default target mix, editable per class. Sums are the user's problem to
- *  balance — the drift chart shows them when it doesn't reach 100%. */
-const DEFAULT_TARGETS: Partial<Record<AssetClass, number>> = {
+/**
+ * A starting point offered when someone asks for one — never applied silently.
+ *
+ * A widely-taught three-fund shape, which is a reasonable thing to edit from
+ * and an indefensible thing to measure someone against without asking.
+ */
+const STARTING_MIX: Partial<Record<AssetClass, number>> = {
   us_stock: 6000,
   intl_stock: 2000,
   bond: 1500,
@@ -369,10 +373,17 @@ export default function InvestmentsPage({ onNavigate }: { onNavigate: (view: Vie
     addLiability,
     updateLiability,
     removeLiability,
+    updateSettings,
   } = useStore();
   const fmt = useFormatMoney();
 
-  const [targets, setTargets] = useState<Partial<Record<AssetClass, number>>>(DEFAULT_TARGETS);
+  // The target mix lives in settings, not component state: an allocation you
+  // retype after every reload is one you stop maintaining.
+  const targetMix = data.settings.targetMixBps;
+  const targets = targetMix ?? {};
+  const setTargets = (
+    fn: (current: Partial<Record<AssetClass, number>>) => Partial<Record<AssetClass, number>>,
+  ): void => updateSettings({ targetMixBps: fn(targets) });
 
   const portfolio = useMemo(() => summarizePortfolio(data.accounts), [data.accounts]);
   const netWorth = useMemo(
@@ -408,6 +419,17 @@ export default function InvestmentsPage({ onNavigate }: { onNavigate: (view: Vie
 
   const drift = useMemo(() => rebalancePlan(portfolio, targets), [portfolio, targets]);
   const targetTotalBps = Object.values(targets).reduce((sum, v) => sum + (v ?? 0), 0);
+
+  /**
+   * How much of the portfolio has no real asset class.
+   *
+   * Linked holdings arrive classified by whatever the brokerage called them,
+   * and plenty land as "other" — a lump-sum entry from setup does too. Drift
+   * computed over a portfolio that is a third unclassified is arithmetic
+   * about nothing, so it is worth saying before showing the chart.
+   */
+  const unclassifiedBps =
+    portfolio.byAssetClass.find((c) => c.assetClass === 'other')?.shareBps ?? 0;
 
   const netWorthRows = [
     { label: 'Investments', valueCents: portfolio.totalValueCents, color: 'var(--series-1)' },
@@ -515,13 +537,36 @@ export default function InvestmentsPage({ onNavigate }: { onNavigate: (view: Vie
           </div>
         )}
 
-        {portfolio.totalValueCents > 0 && (
+        {portfolio.totalValueCents > 0 && targetMix === null && (
+          <Card title="Target mix" note="What you want the portfolio to look like.">
+            <EmptyState icon="◎" title="No target set">
+              <p style={{ maxWidth: '58ch', margin: '0 auto 12px' }}>
+                Drift only means something against a mix you chose. Set one and this becomes a
+                list of where your next contribution should go; until then there is nothing
+                honest to compare against.
+              </p>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => updateSettings({ targetMixBps: STARTING_MIX })}
+              >
+                Start from a three-fund mix
+              </button>
+              <p className="field-hint" style={{ marginTop: 10 }}>
+                60% US stocks, 20% international, 15% bonds, 5% REITs — a common starting point,
+                not a recommendation. Every number is editable afterwards.
+              </p>
+            </EmptyState>
+          </Card>
+        )}
+
+        {portfolio.totalValueCents > 0 && targetMix !== null && (
           <ChartFrame
-            title="Drift from your target mix"
+            title="Where your next contribution should go"
             note={
               targetTotalBps === 10_000
-                ? 'Positive means overweight — sell down or direct new money elsewhere.'
-                : `Your targets add up to ${bpsToPercent(targetTotalBps).toFixed(1)}%, not 100%. Adjust them below.`
+                ? 'Under target means buy more of it; over target means send new money elsewhere.'
+                : `Your targets add up to ${bpsToPercent(targetTotalBps).toFixed(1)}%, not 100%. Fix that below or the gaps below are measured against the wrong whole.`
             }
             table={
               <MoneyTable
@@ -529,7 +574,7 @@ export default function InvestmentsPage({ onNavigate }: { onNavigate: (view: Vie
                   { label: 'Asset class' },
                   { label: 'Current', numeric: true },
                   { label: 'Target', numeric: true },
-                  { label: 'Drift', numeric: true },
+                  { label: 'Gap', numeric: true },
                 ]}
                 rows={drift.map((d) => ({
                   key: d.assetClass,
@@ -537,12 +582,25 @@ export default function InvestmentsPage({ onNavigate }: { onNavigate: (view: Vie
                     ASSET_CLASS_LABELS[d.assetClass as AssetClass] ?? d.assetClass,
                     `${bpsToPercent(d.currentBps).toFixed(1)}%`,
                     `${bpsToPercent(d.targetBps).toFixed(1)}%`,
-                    `${d.driftCents >= 0 ? '+' : '−'}${fmt(Math.abs(d.driftCents))}`,
+                    d.driftCents >= 0
+                      ? `${fmt(d.driftCents)} over`
+                      : `${fmt(Math.abs(d.driftCents))} under`,
                   ],
                 }))}
               />
             }
           >
+            {unclassifiedBps > 500 && (
+              <Callout tone="warning">
+                <strong>
+                  {bpsToPercent(unclassifiedBps).toFixed(0)}% of the portfolio has no asset class.
+                </strong>{' '}
+                Linked holdings are classified by whatever the brokerage called them, and a
+                starting total entered during setup has no class at all. Until those are set on
+                the accounts below, everything here is measured against an incomplete picture.
+              </Callout>
+            )}
+
             <DriftChart
               rows={drift}
               labelFor={(key) => ASSET_CLASS_LABELS[key as AssetClass] ?? key}
@@ -562,6 +620,15 @@ export default function InvestmentsPage({ onNavigate }: { onNavigate: (view: Vie
                   )}
                 </Field>
               ))}
+            </div>
+            <div className="btn-row" style={{ marginTop: 10 }}>
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                onClick={() => updateSettings({ targetMixBps: null })}
+              >
+                Clear target mix
+              </button>
             </div>
           </ChartFrame>
         )}

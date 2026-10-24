@@ -88,6 +88,8 @@ export function migrate(data: AppData): AppData {
       // never be dropped back into a wizard by an update.
       setupCompletedAt:
         data.settings?.setupCompletedAt ?? (looksUsed(data) ? Date.now() : null),
+      // Added after launch; an existing install has simply never set one.
+      targetMixBps: data.settings?.targetMixBps ?? null,
       schemaVersion: SCHEMA_VERSION,
     },
     categories: (data.categories ?? []).map((c) => ({
