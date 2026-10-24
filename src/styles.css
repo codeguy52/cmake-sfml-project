@@ -1309,3 +1309,150 @@ input[aria-invalid='true'] {
   margin-top: 2px;
   flex: none;
 }
+
+/* ---------- Findings, steps and lessons ----------
+   All three are the same shape: a headline you can read at a glance, with the
+   reasoning one tap underneath. The page this replaced put the number in
+   paragraph three. */
+
+.finding-list,
+.step-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.finding,
+.step {
+  border-top: 1px solid var(--border);
+}
+
+.finding:first-child,
+.step:first-child {
+  border-top: none;
+}
+
+.step.is-muted {
+  opacity: 0.55;
+}
+
+.finding-head,
+.step-head {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 20px;
+  gap: 10px;
+  align-items: start;
+  width: 100%;
+  padding: 12px 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.finding-head:hover,
+.step-head:hover {
+  color: var(--text-primary);
+}
+
+.finding-icon,
+.step-index {
+  font-size: 15px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.finding-title,
+.step-title {
+  display: block;
+  font-weight: 550;
+  line-height: 1.45;
+}
+
+.step-status {
+  display: block;
+  font-size: 12.5px;
+  margin-top: 2px;
+}
+
+.finding-toggle {
+  color: var(--text-muted);
+  font-size: 15px;
+  text-align: right;
+}
+
+.finding-detail,
+.step-detail {
+  margin: 0 0 13px;
+  padding-left: 32px;
+  max-width: 68ch;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.lesson {
+  border-top: 1px solid var(--border);
+}
+
+.lesson:first-child {
+  border-top: none;
+}
+
+.lesson > summary {
+  padding: 12px 0;
+  cursor: pointer;
+  font-weight: 550;
+  list-style: none;
+}
+
+.lesson > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* A disclosure control needs to look like one before it is opened. */
+.lesson > summary::before {
+  content: '+';
+  display: inline-block;
+  width: 18px;
+  color: var(--text-muted);
+}
+
+.lesson[open] > summary::before {
+  content: '−';
+}
+
+.lesson-body {
+  padding: 0 0 14px 18px;
+  max-width: 68ch;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  line-height: 1.65;
+}
+
+.lesson-body p {
+  margin: 0 0 10px;
+}
+
+.lesson-body ul {
+  margin: 0 0 10px;
+  padding-left: 18px;
+}
+
+.lesson-body li {
+  margin-bottom: 7px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
