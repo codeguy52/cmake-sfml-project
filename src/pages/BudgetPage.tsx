@@ -23,6 +23,8 @@ import {
   useFormatMoney,
 } from '../components/ui';
 import { ShareTable, StackedShareBar, useSeriesColor } from '../components/charts';
+import { analyzeSpending } from '../lib/spending';
+import SpendingAnalysisCard from '../components/SpendingAnalysis';
 
 const GROUP_LABELS: Record<CategoryGroup, string> = {
   needs: 'Need',
@@ -372,6 +374,19 @@ export default function BudgetPage() {
     [data.categories, data.incomeSources, data.transactions, month],
   );
 
+  // Several months at once, which is the thing the per-month view above
+  // structurally cannot do.
+  const spending = useMemo(
+    () =>
+      analyzeSpending({
+        categories: data.categories,
+        incomeSources: data.incomeSources,
+        transactions: data.transactions,
+        summary,
+      }),
+    [data.categories, data.incomeSources, data.transactions, summary],
+  );
+
   const slices = useMemo(
     () =>
       foldToOther(
@@ -571,6 +586,8 @@ export default function BudgetPage() {
             </div>
           )}
         </Card>
+
+        <SpendingAnalysisCard analysis={spending} />
 
         <Card
           title="This month against budget"
